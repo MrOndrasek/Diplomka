@@ -1,0 +1,28 @@
+%% OpTeX <1.18 May 2025> - REF file
+\Xrefversion{6}
+% \refdecl:
+\_def\_ctustyle_totlist{} \_def\_ctustyle_toflist{}
+ \_def\_ctustyle_Xtab#1#2#3{\_addto\_ctustyle_totlist{\_ctustyle_totline{#1}{#2}{#3}}}
+ \_def\_ctustyle_Xfig#1#2#3{\_addto\_ctustyle_toflist{\_ctustyle_tofline{#1}{#2}{#3}}} 
+\_Xpage{1}{i}
+\_Xpage{2}{ii}
+\_Xpage{3}{iii}
+\_Xpage{4}{iv}
+\_Xpage{5}{1}
+\_Xtoc{1}{chap}{1}{}Požadované artefakty semestrálního projektu
+\_Xtoc{2}{sec}{1.1}{}Úvodní studie (Vision and scope)
+\_Xtoc{3}{secc}{1.1.1}{}Deklarace záměru: účel, přínos, motivace, provozní prostředí
+\_Xtoc{3}{secc}{1.1.2}{}Stakeholdeři(kdo systém používá, kdo ho spravuje, kdo je regulátor/bezpoečnostní autorita)
+\_Xtoc{3}{secc}{1.1.3}{}Top-5 klíčových scénářů použití
+\_Xtoc{3}{secc}{1.1.4}{}Odhad složitosti a rizik (3-5 hlavních rizik)
+\_Xtoc{3}{secc}{1.1.5}{}Plán ověřování v jedné větě: "Úspěch je, když.."(měřitelné)
+\_Xtoc{3}{secc}{1.1.6}{}Hranice systému(Co je uvnitř a co je už okolí)-Kontext systému(C4 Kontext/kontextový diagram)+seznam událostí/podnětů z okolí
+\_Xtoc{3}{secc}{1.1.7}{}Seznam rolí a aktérů (včetně bezpečnostních rolí)
+\_Xtoc{3}{secc}{1.1.8}{}Základní omezení: HW rozhraní, standarty, bezpečnostní limity, reálný čas.
+\_Xtoc{3}{secc}{1.1.9}{}Plán práce týmu + rozdělení rolí a autorizace
+\_Xpage{6}{2}
+\_Xtoc{2}{sec}{1.2}{}Specifikace požadavků (Requirements Specification)
+\_Xtoc{3}{secc}{1.2.1}{}Use-case model/user stories: hlavní scénáře + alternativní a chybové toky
+\_Xtoc{3}{secc}{1.2.2}{}Seznam funkčních a nefunkčních požadavků s identifikátory (např. FR-01, NFR-03). U každého: popis,priorita,zdroj, verifikace
+\_Xtoc{3}{secc}{1.2.3}{}Požadavky na rozhraní: signály, zprávy, API, datové formáty, časování.
+\_Xtoc{3}{secc}{1.2.4}{}Stop-stavy a chování při poruchách - vazba na bezpečnost

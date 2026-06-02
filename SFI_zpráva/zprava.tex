@@ -1,0 +1,83 @@
+% !TEX root = ./zprava.tex
+
+
+% arara: luahbtex: { synctex: on, interaction: nonstopmode, shell: on,options:[--fmt=optex] }
+
+\input ctustyle3
+\worktype [O/CZ]
+\workname {SFI-semestrální práce}
+\faculty {F2}
+\department {12135 - ústav výrobních strojů a zařízení}
+\title {SFI-semestrální práce}
+\author {Ondřej Dohnal}
+\supervisor{Ing. Pavel Steinbauer Ph.D.}
+\date {Leden 2026}
+
+
+\makefront
+\chap Požadované artefakty semestrálního projektu
+\sec Úvodní studie (Vision and scope)
+
+\secc Deklarace záměru: účel, přínos, motivace, provozní prostředí
+Projektem je databáze pro sběr dat z laser trackeru AT960, tato databáze slouží k sběru poloh robota pro následné učení evolučních algoritmů.
+Výsledek by měl být aplikace která může sbírat data po dlouhé časové intervaly (12 hodin a více) a ukládat je do databáze.
+
+\secc Stakeholdeři(kdo systém používá, kdo ho spravuje, kdo je regulátor/bezpoečnostní autorita)
+Uživatel zahajuje měření a na jeho konci dostává databázi s daty, které jdou následně zpracovávat.
+Administrátor se stará o chod systému a jeho debugování.
+
+\secc Top-5 klíčových scénářů použití
+Měření dat z pohybu robota, ukládání dat v databázi, filtrace dat, export dat
+
+\secc Odhad složitosti a rizik (3-5 hlavních rizik)
+Funkčnost přenosu dat, funkčnost měřícího nástroje, ukládání správného datového typu, čitelnost dat
+
+\secc Plán ověřování v jedné větě: "Úspěch je, když.."(měřitelné)
+Úspěch je když se dokáže naplnit databáze daty s údaji o poloze koncového efektoru00
+
+\secc Hranice systému(Co je uvnitř a co je už okolí)-Kontext systému(C4 Kontext/kontextový diagram)+seznam událostí/podnětů z okolí
+Uvnitř: kód pro spuštění měření, přenos dat do databázového systému, velmi jednoduché UI 
+Venku: programování hardware robota a měřícího zařízení, evoluční algoritmy
+
+\secc Seznam rolí a aktérů (včetně bezpečnostních rolí)
+Uživatel-spuštění měření
+Admin-úprava a správa kódu
+
+\secc Základní omezení: HW rozhraní, standarty, bezpečnostní limity, reálný čas.
+HW rozhraní=Leika Laser Tracker AT960 + Aiwa Kukka, reakční čas musí být do 0.5s.
+
+\secc Plán práce týmu + rozdělení rolí a autorizace
+Vše dělám sám.
+
+
+\sec Specifikace požadavků (Requirements Specification)
+\secc Use-case model/user stories: hlavní scénáře + alternativní a chybové toky
+Jako uživatel chci naměřit kvanta dat pro následné další zpracování.
+
+\secc Seznam funkčních a nefunkčních požadavků s identifikátory (např. FR-01, NFR-03). U každého: popis,priorita,zdroj, verifikace
+Funkční systém naplní databázi pozicemi odrazky.
+Nefunkční systém bude mít dlouhou odezvu (více jak 5 sekund), data o poloze jsou prázdná
+
+\secc Požadavky na rozhraní: signály, zprávy, API, datové formáty, časování.
+Hlavní komunikace mezi rozhraním bude zařizovat ROS2, data se budou přenášet ve formátu float32, frekvence snímání bude do 1 sekundy od změny polohy robota.
+
+
+\secc Stop-stavy a chování při poruchách - vazba na bezpečnost
+Přílišné množství stejných dat --> systém se zastaví a vyhodí chybu
+Výpadek DB --> měření se zastaví dokud DB znovu nepoběží
+
+\sec Modely systému (konceptuální návrh)
+\secc Doménový model
+\secc Dynamický model
+\secc Procesní/behaviroální model
+\secc Model rozhraní a nasazení
+
+\sec Ověřovací plán
+\secc V&V matice
+\secc Test strategie po úrovních
+\secc Testovací scénáře
+\secc Testovací data a očekávané výsledky
+\secc Plán záznamu výsledků
+
+\sec Prototyp
+\bye

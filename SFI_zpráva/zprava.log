@@ -1,0 +1,145 @@
+This is LuaHBTeX, Version 1.22.0 (TeX Live 2025)  (format=optex 2026.1.19)  25 MAR 2026 14:10
+ system commands enabled.
+**zprava.tex
+(./zprava.tex This is OpTeX (Olsak's Plain TeX), version <1.18 May 2025>
+(./zprava.ref)
+\openout1 = zprava.ref
+ (./ctustyle3.tex CTUstyle3: Thesis at Czech Technical University in Prague, <Oct.2025 beta(z)>
+\faculty=\toks304
+\department=\toks305
+\title=\toks306
+\subtitle=\toks307
+\author=\toks308
+\supervisor=\toks309
+\date=\toks310
+\studyinfo=\toks311
+\authorinfo=\toks312
+\workinfo=\toks313
+\workname=\toks314
+\pagetwo=\toks315
+\titleEN=\toks316
+\titleCZ=\toks317
+\titleSK=\toks318
+\subtitleEN=\toks319
+\subtitleCZ=\toks320
+\subtitleSK=\toks321
+\abstractEN=\toks322
+\abstractCZ=\toks323
+\abstractSK=\toks324
+\keywordsEN=\toks325
+\keywordsCZ=\toks326
+\keywordsSK=\toks327
+\thanks=\toks328
+\declaration=\toks329
+\specification=\toks330
+ (c:/texlive/2025/texmf-dist/tex/optex/base/f-technika.opm
+luaotfload | conf : Root cache directory is "C:/texlive/2025/texmf-var/luatex-cache/generic/names".
+luaotfload | init : Loading fontloader "fontloader-2023-12-28.lua" from kpse-resolved path "c:/texlive/2025/texmf-dist/tex/luatex/luaotfload/fontloader-2023-12-28.lua".
+"luaotfload@noligature"=\attribute3
+luaotfload | init : Context OpenType loader version 3.134
+"luaotfload_color_attribute"=\attribute4
+luaotfload | conf : Root cache directory is "C:/texlive/2025/texmf-var/luatex-cache/generic/names".
+"luaotfload.letterspace_done"=\attribute5
+luaotfload | db : Font names database loaded from C:/texlive/2025/texmf-var/luatex-cache/generic/names/luaotfload-names.luc.gz
+luaotfload | db : Reload initiated (formats: otf,ttf,ttc); reason: File not found: "Technika-Regular".
+FONT: [Technika] -- \Technika (Fonts from visual style of CTU in Prague)
+ mods:{\caps \light \book } vars:{\rm \bf \it \bi \stencil } math:{}
+Modifiers:
+ \light ..... lighter variants: \rm \bf =light \bf \bi =normal
+ \book ...... semi-ligher variants: \rm \bf =book \bf \bi =bold
+ \caps ...... caps & small caps
+Special variant:
+ \stencil ... dashed leters (only uppercase)
+ 
+) (c:/texlive/2025/texmf-dist/tex/optex/base/f-lmfonts.opm
+FONT: [Latin Modern] -- \LMfonts (TeX Gyre fonts based on Computer Modern)
+ mods:{\roman \sans \quotset \ttset \ttprop \ttlight \ttcond \upital \dunhill submods:\caps \slant \nbold \bolder } vars:{\rm \bf \it \bi \tt } math:{LM}
+Modifiers (selects subfamily):
+ \modreset .. implicit values (serif, bold extended, nocaps)
+ \sans ...... sans serif subfamily
+ \quotset ... quotation subfamily
+ \ttset ..... typewriter subfamily
+ \ttprop .... proportional typewriter-like subfamily
+ \ttlight ... light typewriter subfamily
+ \ttcond .... condensed typewriter subfamily
+ \upital .... upright italic (only \rm )
+ \dunhill ... dunhill roman subfamily (only \rm , \it )
+Sub-modifiers (selects special variants of given subfamily):
+ \caps ...... caps & small caps (available only at limited shapes)
+ \slant ..... slanted (default in some subfamilies)
+ \nbold ..... normal bold (extended bold is default)
+ \bolder .... extended bold
+Note: Text fonts support optical sizes, but LatinModern-Math only for scripts.
+ Use another CM-like family if optical sizes not wanted: \fontfam [NewCM]. 
+MATH-FONT: "[latinmodern-math]" -- unicode math prepared.
+(c:/texlive/2025/texmf-dist/tex/optex/base/unimath-codes.opm
+@:[unimath-codes] Uni math codes <2025-02-09>
+\_umathnumA=\count298
+\_umathnumB=\count299
+ (c:/texlive/2025/texmf-dist/tex/optex/base/mathclass.opm) (c:/texlive/2025/texmf-dist/tex/optex/base/unimath-table.opm)))
+\_ctustyle_hours=\count300
+\_ctustyle_minutes=\count301
+\_ctustyle_leftbox=\box262
+\_ctustyle_rightbox=\box263
+\_ctustyle_frontht=\dimen295
+\_ctustyle_tocbox=\box264
+\_ctustyle_tofbox=\box265
+\_ctustyle_totbox=\box266
+\_ctustyle_appnum=\count302
+\_ctustyle_maxglosindent=\dimen296
+\_ctustyle_rfcnum=\count303
+)
+Loading hyphenation for Czech: \language=7 (cs)
+ (c:/texlive/2025/texmf-dist/tex/generic/hyph-utf8/patterns/tex/hyph-cs.tex) [-1{c:/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map}<./logo_CVUT.pdf>] [-2]
+Loading hyphenation for Slovak: \language=37 (sk)
+ (c:/texlive/2025/texmf-dist/tex/generic/hyph-utf8/patterns/tex/hyph-sk.tex) (c:/texlive/2025/texmf-dist/tex/optex/base/lang-data.opm
+Reading data for the language Slovak (sk)
+)
+Overfull \hbox (34.2451pt too wide) in paragraph at lines 17--17
+ \_tenrm vě-tě: [](mě- |
+
+\hbox(8.877+2.75)x190.63347, glue set - 1.0, direction TLT
+.\glue(\leftskip) 39.83383
+.\_tenrm v
+.\kern-0.308 (font)
+.\_tenrm ě
+.\discretionary (penalty 50)
+..< \_tenrm -
+.\_tenrm t
+.\_tenrm ě
+.\_tenrm :
+.\glue(\spaceskip) 3.663 plus 1.8315 minus 1.221
+.\hbox(8.877+2.508)x98.1749, direction TLT
+..\_tentt Ú
+..\_tentt s
+..\_tentt p
+..\_tentt ě
+..\_tentt c
+..\_tentt h
+..\glue(\spaceskip) 5.775
+..\_tentt j
+..\_tentt e
+..\_tentt ,
+..\glue(\spaceskip) 5.775
+..\_tentt k
+..\_tentt d
+..\_tentt y
+..\_tentt ž
+..\_tentt .
+..\_tentt .
+.\_tenrm (
+.\_tenrm m
+.\_tenrm ě
+.\_tenrm -
+.\discretionary (penalty 50)
+.\glue(\rightskip) 39.83383 plus 11.0
+.\rule(*+*)x5.0
+
+[-3] [-4] [1] [2])<./Technika-BookItalic.otf><./Technika-Book.otf><c:/texlive/2025/texmf-dist/fonts/opentype/public/lm/lmmono10-regular.otf><c:/texlive/2025/texmf-dist/fonts/opentype/public/lm/lmroman10-regular.otf><./Technika-Bold.otf>
+Output written on zprava.pdf (6 pages, 41881 bytes).
+
+PDF statistics: 175 PDF objects out of 1000 (max. 8388607)
+ 149 compressed objects within 2 object streams
+ 24 named destinations out of 1000 (max. 131072)
+ 145 words of extra memory for PDF output out of 10000 (max. 100000000)
+
