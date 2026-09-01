@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="3">
+
+  <name>measurement_system_interfaces</name>
+
+  <version>0.0.0</version>
+
+  <description>
+    ROS2 interfaces for measurement system
+  </description>
+
+  <maintainer email="medula.dohnal@gmail.com">
+    dohnal
+  </maintainer>
+
+  <license>Apache-2.0</license>
+
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rosidl_default_generators</depend>
+
+  <depend>rosidl_default_runtime</depend>
+
+
+  <member_of_group>
+    rosidl_interface_packages
+  </member_of_group>
+
+
+</package>
