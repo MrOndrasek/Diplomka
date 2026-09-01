@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:18.2
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=dohnaon1
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_DB=laser_tracker_data
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    restart: unless-stopped
+  
+  pgadmin:
+    image: dpage/pgadmin4:9.12
+    ports:
+      - 5050:80
+    environment:
+       PGADMIN_DEFAULT_EMAIL: demo@example.com
+       PGADMIN_DEFAULT_PASSWORD: secret
+
+       PGADMIN_CONFIG_SERVER_MODE: "False"
+
+       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+       restart: unless-stopped
+
+volumes:
+  postgres_data:
