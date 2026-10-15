@@ -117,6 +117,9 @@ print(fw_result[1])
 for i, T in enumerate(fw_result[0]):
     print(i, T[:3,3])"""
 
+
+
+
 def inverse_kinematics(p_cil,T_mat_list,p_E,R_cil,R_E): #p_cil je list se souradnicemi x,y,z
     e_p=(p_cil-p_E ).reshape(3,1)/100
     R_err=R_cil @ R_E.T
@@ -144,9 +147,14 @@ def inverse_kinematics(p_cil,T_mat_list,p_E,R_cil,R_E): #p_cil je list se sourad
         J_mat @ J_mat.T + para**2 * np.eye(6),
         e
     )
+    if np.linalg.det(J_mat)==0:
+        q=np.array([[200],[200],[200],[200],[200],[200]])
     """print(p_E)
     print(J_mat)"""
     return q
+
+
+
 
 def rotation_error(R_cil, R_E):
 
@@ -196,6 +204,9 @@ def rotation_error(R_cil, R_E):
     return e_r.reshape(3,1)
 
 
+
+
+
 def joint_calculation(p_cil,R_cil_model,q_0,max_iter,tolerance):
     for i in range(0,max_iter):
             fw_res=forward_kinematics(q_0)
@@ -231,26 +242,14 @@ def joint_calculation(p_cil,R_cil_model,q_0,max_iter,tolerance):
 
 
 
-def generation_of_movements(number_of_motions):
-    q_0 = np.radians([
-    [0],
-    [0],
-    [0],
-    [0],
-    [0],
-    [0]
-    ])
+
+
+
+def generation_of_movements(number_of_motions,q_0,R_cil):
     
     max_iter=6000
     tolerance=0.01
-    p_cil=np.array([
-        500,300,600
-        ])
-    R_cil = np.array([
-        [-1,0,0],
-        [0,0,1],
-        [0,1,0]
-    ])
+    
     R_fix = np.array([
         [0,-1,0],
         [1, 0,0],
@@ -268,6 +267,65 @@ def generation_of_movements(number_of_motions):
         else:
             i+=1
             q_0=result[1]
-            print(f"[{math.degrees(q_0[0,0])}],[{math.degrees(q_0[1,0])}],[{math.degrees(q_0[2,0])}],[{-math.degrees(q_0[3,0])}],[{math.degrees(q_0[4,0])}],[{math.degrees(q_0[5,0])}]")
+            print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
 
-generation_of_movements(10)
+
+def ball_movements(number_of_points,number_of_support_points):
+    R_cil = np.array([
+            [-1,0,0],
+            [0,0,1],
+            [0,1,0]
+        ])
+
+    R_fix = np.array([
+            [0,-1,0],
+            [1, 0,0],
+            [0, 0,1]
+        ])
+    R_cil_model = R_cil @ R_fix.T 
+
+    point_number=0
+    while point_number<number_of_points:
+        q_0 = np.radians([
+                [5],
+                [90],
+                [5],
+                [5],
+                [5],
+                [5]
+                ])  
+        
+        p_cil_center=np.array([random.randint(335,400),
+                               random.randint(-200,200),
+                               random.randint(325,700)
+                               ])
+        
+        result_center=joint_calculation(p_cil_center,R_cil_model,q_0,6000,0.01)
+        i=0
+        if result_center is False:
+            print(p_cil_center)
+            continue
+        else:
+            q_0_center=result_center[1]
+            while i<number_of_support_points:
+                radius=20
+                azimut=2*math.pi*(np.random.uniform(0, 1))
+                polar_angle=np.arccos(np.random.uniform(-1, 1))
+
+                p_cil=np.array([
+                    p_cil_center[0]+radius*math.sin(polar_angle)*math.cos(azimut),
+                    p_cil_center[1]+radius*math.sin(polar_angle)*math.sin(azimut),
+                    p_cil_center[2]+radius*math.cos(polar_angle)
+                ])
+
+                result_point=joint_calculation(p_cil,R_cil_model,q_0_center,6000,0.01)
+                if result_point is False:
+                    continue
+                else:
+                    i+=1
+                    q_0=result_point[1]
+                    print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
+                    print(f"[{math.degrees(q_0_center[0,0])},{math.degrees(q_0_center[1,0])},{math.degrees(q_0_center[2,0])},{-math.degrees(q_0_center[3,0])},{math.degrees(q_0_center[4,0])},{math.degrees(q_0_center[5,0])}],")
+            point_number+=1
+   
+ball_movements(5,60)
