@@ -1,0 +1,15 @@
+jede s Ros2 Humble
+
+po stažení z GitHubu "colcon build --symlink-install"
+
+pro spusteni databaze "sudo docker compose up" 
+
+zkontrolovat jestli je Leika pripojena pres EtherCAT
+
+
+
+následně se spustí přes "ros2 launch measurement_system measurement_system.launch.py"
+
+
+
+nejčastější chyby jsou konektivita s robotem a trackerem

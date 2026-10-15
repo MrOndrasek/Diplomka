@@ -8,7 +8,7 @@ class Connection:
         self.port = port
         self._master = pysoem.Master()
 
-        self.ctx = zmq.Context()
+        self.ctx = zmq.Context() 
         self.sock = self.ctx.socket(zmq.PUB)
         self.sock.bind("tcp://*:5555")
 
