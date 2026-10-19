@@ -38,6 +38,14 @@ def create_table():
         q6 DOUBLE PRECISION,
         q7 DOUBLE PRECISION
         )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS table_plane_points (
+            id SERIAL PRIMARY KEY,
+            measurement_id INTEGER REFERENCES measurements(id),
+            point TEXT NOT NULL,
+            x DOUBLE PRECISION,
+            y DOUBLE PRECISION,
+            z DOUBLE PRECISION
+            )""")
     
     cur.close()
     conn.commit()

@@ -15,8 +15,6 @@ class DatabaseNode(Node):
     def __init__(self):
         super().__init__("database_node")
 
-        self.recording = False
-
         # PostgreSQL
         self.conn = self.get_connection()
 
@@ -43,12 +41,6 @@ class DatabaseNode(Node):
             self.callback_save_measurement
         )
 
-        # Timer pro čtení trackeru
-        self.timer = self.create_timer(
-            0.001,
-            self.read_tracker
-        )
-
         self.get_logger().info(
             "Database node started"
         )
@@ -56,90 +48,78 @@ class DatabaseNode(Node):
 
     def read_tracker(self):
 
-        # Nečekej na data blokujícím recv()
-        try:
-            if not self.sock.poll(0):
-                return
+        #vycisti stara data
+        self.clear_queue()
 
-            timestamp_data, data = self.sock.recv_multipart(
-                zmq.NOBLOCK
+        #timeout pro tracker
+        if not self.sock.poll(5000):
+            self.get_logger().error("Leika timeout")
+            return False
+
+        try:
+            timestamp_data, data=self.sock.recv_multipart()
+            
+            timestamp = int.from_bytes(
+                timestamp_data,
+                "little"
             )
 
-        except zmq.Again:
-            return
+            # Rozbalení Leica dat
+            value_distance = struct.unpack_from(
+                "<d", data, 20
+            )[0]
 
-        # Timestamp
-        timestamp = int.from_bytes(
-            timestamp_data,
-            "little"
-        )
+            value_angle_hz = struct.unpack_from(
+                "<d", data, 12
+            )[0]
 
-        # Rozbalení Leica dat
-        value_distance = struct.unpack_from(
-            "<d", data, 20
-        )[0]
+            value_angle_vt = struct.unpack_from(
+                "<d", data, 4
+            )[0]
 
-        value_angle_hz = struct.unpack_from(
-            "<d", data, 12
-        )[0]
+            # Ukládání pouze pokud probíhá měření
 
-        value_angle_vt = struct.unpack_from(
-            "<d", data, 4
-        )[0]
+            
+            self.cur.execute(
+                """
+                INSERT INTO measurement_data
+                (
+                    distance,
+                    angleHz,
+                    angleVt,
+                    time_of_meas,
+                    q1,
+                    q2,
+                    q3,
+                    q4,
+                    q5,
+                    q6,
+                    q7
+                )
+                VALUES (%s, %s, %s, %s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (
+                    value_distance,
+                    value_angle_hz,
+                    value_angle_vt,
+                    timestamp,
+                    *self.joints
+                    
+                ),
+            )
 
-        self.get_logger().debug(
-            f"Distance: {value_distance}, "
-            f"Hz: {value_angle_hz}, "
-            f"Vt: {value_angle_vt}"
-        )
+            self.conn.commit()
+            return False
+        
+        except Exception as e:
 
-        # Ukládání pouze pokud probíhá měření
-        if self.recording and self.cur:
+                    self.conn.rollback()
 
-            try:
-                self.cur.execute(
-                    """
-                    INSERT INTO measurement_data
-                    (
-                        distance,
-                        angleHz,
-                        angleVt,
-                        time_of_meas,
-                        q1,
-                        q2,
-                        q3,
-                        q4,
-                        q5,
-                        q6,
-                        q7
+                    self.get_logger().error(
+                        f"Database error: {e}"
                     )
-                    VALUES (%s, %s, %s, %s,%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        value_distance,
-                        value_angle_hz,
-                        value_angle_vt,
-                        timestamp,
-                        self.joints[0],
-                        self.joints[1],
-                        self.joints[2],
-                        self.joints[3],
-                        self.joints[4],
-                        self.joints[5],
-                        self.joints[6]
-                        
-                    ),
-                )
-
-                self.conn.commit()
-                self.recording=False
-            except Exception as e:
-
-                self.conn.rollback()
-
-                self.get_logger().error(
-                    f"Database error: {e}"
-                )
+                    return False
+            
 
 
     def callback_save_measurement(
@@ -147,29 +127,24 @@ class DatabaseNode(Node):
         request,
         response
     ):
-        self.joints=request.joints
+        if not request.save:
+            response.success=True
+            response.message="Measurrement skipped"
+            return response
 
-        self.recording = request.save
+        if self.cur is None:
+            response.success=False
+            response.message="Database unavaiable"
+            return response
 
-        if self.recording:
+        if len(request.joints) != 7:
+            response.success=False
+            response.message="Invalid joint position"
+            return response
 
-            self.get_logger().info(
-                "Measurement recording STARTED"
-            )
+        self.joints=list(request.joints)
 
-            response.success = True
-            response.message = "Recording started"
-
-        else:
-
-            self.get_logger().info(
-                "Measurement recording STOPPED"
-            )
-
-            response.success = True
-            response.message = "Recording stopped"
-
-        return response
+        success=self.read_tracker()
 
 
     def get_connection(self):
@@ -205,6 +180,19 @@ class DatabaseNode(Node):
         self.ctx.term()
 
         super().destroy_node()
+
+    def clear_queue(self):
+        count=0
+        while True:
+            try:
+                self.sock.recv_multipart(flags=zmq.NOBLOCK)
+                count+=1
+
+            except zmq.Again:
+                break
+        self.get_logger().info(
+            f"Discarded {count} old measurements"
+        )
 
 
 def main(args=None):

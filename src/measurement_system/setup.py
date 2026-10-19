@@ -29,6 +29,7 @@ setup(
             "robot_node=measurement_system.nodes.robot_node:main",
             "controller_node=measurement_system.nodes.controller_node:main",
             "database_node=measurement_system.nodes.database_node:main",
+            "measurement_ui=measurement_system.ui:main",
 
         ],
     },
