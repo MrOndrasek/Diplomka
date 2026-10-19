@@ -4,10 +4,10 @@ import rclpy
 from rclpy.node import Node
 
 import zmq
-import struct
 import psycopg2
 
 from measurement_system_interfaces.srv import SaveMeasurement
+from measurement_system.measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
 
 class DatabaseNode(Node):
@@ -28,11 +28,7 @@ class DatabaseNode(Node):
             )
 
         # ZMQ
-        self.ctx = zmq.Context()
-
-        self.sock = self.ctx.socket(zmq.SUB)
-        self.sock.connect("tcp://localhost:5555")
-        self.sock.setsockopt(zmq.SUBSCRIBE, b"")
+        Leika_ZMQ_driver.connection()
 
         # Service pro start/stop ukládání
         self.save_service_ = self.create_service(
@@ -49,37 +45,12 @@ class DatabaseNode(Node):
     def read_tracker(self):
 
         #vycisti stara data
-        self.clear_queue()
+        Leika_ZMQ_driver.clear_queue()
 
         #timeout pro tracker
-        if not self.sock.poll(5000):
-            self.get_logger().error("Leika timeout")
-            return False
+        measured_values=Leika_ZMQ_driver.measure_point()
 
-        try:
-            timestamp_data, data=self.sock.recv_multipart()
-            
-            timestamp = int.from_bytes(
-                timestamp_data,
-                "little"
-            )
-
-            # Rozbalení Leica dat
-            value_distance = struct.unpack_from(
-                "<d", data, 20
-            )[0]
-
-            value_angle_hz = struct.unpack_from(
-                "<d", data, 12
-            )[0]
-
-            value_angle_vt = struct.unpack_from(
-                "<d", data, 4
-            )[0]
-
-            # Ukládání pouze pokud probíhá měření
-
-            
+        try:   
             self.cur.execute(
                 """
                 INSERT INTO measurement_data
@@ -99,10 +70,10 @@ class DatabaseNode(Node):
                 VALUES (%s, %s, %s, %s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
-                    value_distance,
-                    value_angle_hz,
-                    value_angle_vt,
-                    timestamp,
+                    measured_values[1],
+                    measured_values[2],
+                    measured_values[3],
+                    measured_values[0],
                     *self.joints
                     
                 ),
@@ -176,24 +147,9 @@ class DatabaseNode(Node):
         if self.conn:
             self.conn.close()
 
-        self.sock.close()
-        self.ctx.term()
-
+        Leika_ZMQ_driver.end_connection()
+        
         super().destroy_node()
-
-    def clear_queue(self):
-        count=0
-        while True:
-            try:
-                self.sock.recv_multipart(flags=zmq.NOBLOCK)
-                count+=1
-
-            except zmq.Again:
-                break
-        self.get_logger().info(
-            f"Discarded {count} old measurements"
-        )
-
 
 def main(args=None):
     rclpy.init(args=args)
