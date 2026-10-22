@@ -20,3 +20,385 @@ source .venv/bin/activate
 colcon build --symlink-install --packages-up-to measurement_system
 source install/setup.bash
 ros2 launch measurement_system measurement_system.launch.py ui_python:="$PWD/.venv/bin/python"
+
+
+ wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[measurement_ui-4] Traceback (most recent call last):
+[measurement_ui-4]   File "/home/dohnal/diplomka_ros/build/measurement_system/measurement_system/UI/ros_bridge.py", line 44, in _spin_once
+[measurement_ui-4]     rclpy.spin_once(self.node, timeout_sec=0.0)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 226, in spin_once
+[measurement_ui-4]     executor.spin_once(timeout_sec=timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+[ERROR] [measurement_ui-4]: process[measurement_ui-4] failed to terminate '10.0' seconds after receiving 'SIGTERM', escalating to 'SIGKILL'
+[measurement_ui-4]     self._spin_once_impl(timeout_sec)
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+[INFO] [measurement_ui-4]: sending signal 'SIGKILL' to process[measurement_ui-4]
+[measurement_ui-4]     handler, entity, node = self.wait_for_ready_callbacks(
+[measurement_ui-4]                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+[measurement_ui-4]     return next(self._cb_iter)
+[measurement_ui-4]            ^^^^^^^^^^^^^^^^^^^
+[measurement_ui-4]   File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+[measurement_ui-4]     wait_set = _rclpy.WaitSet(
+[measurement_ui-4]                ^^^^^^^^^^^^^^^
+[measurement_ui-4] rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+[ERROR] [measurement_ui-4]: process has died [pid 82893, exit code -9, cmd '/usr/bin/python3 -m measurement_system.ui'].
