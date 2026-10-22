@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import random
+import csv
 
 
 def forward_kinematics(q): #q je list o delce 7 s natocenim kloubu ve stupnich, vyhodi polohu koncoveho efektoru a seznam matic pro IK
@@ -283,6 +284,7 @@ def ball_movements(number_of_points,number_of_support_points):
             [0, 0,1]
         ])
     R_cil_model = R_cil @ R_fix.T 
+    list_of_motions=[]
 
     point_number=0
     while point_number<number_of_points:
@@ -324,10 +326,35 @@ def ball_movements(number_of_points,number_of_support_points):
                 else:
                     i+=1
                     q_0=result_point[1]
-                    print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
-                    point_id+=1
-                    print(f"[{math.degrees(q_0_center[0,0])},{math.degrees(q_0_center[1,0])},{math.degrees(q_0_center[2,0])},{-math.degrees(q_0_center[3,0])},{math.degrees(q_0_center[4,0])},{math.degrees(q_0_center[5,0])}],")
-                    point_id+=1
-            point_number+=1
+                    list_of_motions.append([math.degrees(q_0[0,0]),math.degrees(q_0[1,0]),math.degrees(q_0[2,0]),math.degrees(-q_0[3,0]),0,math.degrees(q_0[4,0]),math.degrees(q_0[5,0])])
+                    list_of_motions.append([math.degrees(q_0_center[0,0]),math.degrees(q_0_center[1,0]),math.degrees(q_0_center[2,0]),math.degrees(-q_0_center[3,0]),0,math.degrees(q_0_center[4,0]),math.degrees(q_0_center[5,0])])
+                    #print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
+                    #print(f"[{math.degrees(q_0_center[0,0])},{math.degrees(q_0_center[1,0])},{math.degrees(q_0_center[2,0])},{-math.degrees(q_0_center[3,0])},{math.degrees(q_0_center[4,0])},{math.degrees(q_0_center[5,0])}],")
+                    point_number+=1
+                    print(point_number)
+    export_positions_to_csv(list_of_motions)
+
+def export_positions_to_csv(positions, filename="positions.csv"):
+
+    with open(filename, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        # Hlavička
+        writer.writerow([
+            "point_id", "q1", "q2", "q3", "q4",
+            "q5", "q6", "q7"
+        ])
+
+        # Zápis jednotlivých pozic
+        for i, joints in enumerate(positions, start=1):
+
+            if len(joints) != 7:
+                raise ValueError(
+                    f"Pozice {i} nemá 7 kloubových úhlů"
+                )
+
+            writer.writerow([i] + list(joints))
+
+    print(f"Pozice uloženy do {filename}")
    
-ball_movements(5,60)
+ball_movements(1,60)
