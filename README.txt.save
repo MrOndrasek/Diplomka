@@ -13,3 +13,10 @@ následně se spustí přes "ros2 launch measurement_system measurement_system.l
 
 
 nejčastější chyby jsou konektivita s robotem a trackerem
+
+
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+colcon build --symlink-install --packages-up-to measurement_system
+source install/setup.bash
+ros2 launch measurement_system measurement_system.launch.py ui_python:="$PWD/.venv/bin/python"
