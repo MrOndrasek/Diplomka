@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import Qt, QThread, Signal
-from measurement_system.UI.ros_bridge import RosBridge
+from measurement_system.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -59,11 +59,14 @@ class ExportWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Diplomka | Measurement Control — koncept UI")
+        self.setWindowTitle("Diplomka | Measurement Control")
         self.resize(1250, 780)
         self.rows = []
         self.headers = []
         self.source_path = None
+        self._start_pending = False
+        self._start_accepted = False
+        self._service_ready = False
         self._build()
         self._style()
         self.ros = RosBridge(self)
@@ -179,6 +182,7 @@ class MainWindow(QMainWindow):
         self.format_combo = QComboBox()
         self.format_combo.addItems(["Kloubové pozice (q1–q7)", "Kartézské pozice (x,y,z,rx,ry,rz)"])
         self.format_combo.currentIndexChanged.connect(self._refresh_import_hint)
+        self.format_combo.currentIndexChanged.connect(lambda _index: self._update_start_button())
         bar.addWidget(self.format_combo)
         open_btn = QPushButton("Načíst CSV…")
         open_btn.clicked.connect(self._load_csv)
@@ -279,6 +283,14 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._start_measurement)
         lay.addWidget(self.start_button)
+        self.start_requirements = QLabel("")
+        self.start_requirements.setWordWrap(True)
+        self.start_requirements.setObjectName("startRequirements")
+        lay.addWidget(self.start_requirements)
+        check_btn = QPushButton("Ověřit připojení ke controlleru")
+        check_btn.setObjectName("secondaryButton")
+        check_btn.clicked.connect(self._check_controller)
+        lay.addWidget(check_btn)
         self.measure_log = QPlainTextEdit()
         self.measure_log.setReadOnly(True)
         self.measure_log.setPlaceholderText("Události měření...")
@@ -296,17 +308,34 @@ class MainWindow(QMainWindow):
         )
         self._update_start_button()
 
+    def _check_controller(self):
+        self.ros.check_service()
+        self.measure_log.appendPlainText("Kontroluji službu /start_measurement…")
+
     def _update_start_button(self):
         if not hasattr(self, "start_button"):
             return
-        ready = (getattr(self, "_service_ready", False)
-                 and bool(self.source_path)
-                 and bool(self.rows)
-                 and self.format_combo.currentIndex() == 0
-                 and self.arm_checkbox.isChecked()
-                 and not getattr(self, "_start_pending", False)
-                 and not getattr(self, "_start_accepted", False))
-        self.start_button.setEnabled(ready)
+
+        reasons = []
+        if not bool(self.source_path) or not bool(self.rows):
+            reasons.append("Načti CSV s kloubovými pozicemi.")
+        if self.format_combo.currentIndex() != 0:
+            reasons.append("Pro řízení robota vyber kloubové pozice q1–q7.")
+        if not getattr(self, "_service_ready", False):
+            reasons.append("ROS2 služba /start_measurement není dostupná. Spusť controller_node a ověř definici StartMeasurement.srv.")
+        if not self.arm_checkbox.isChecked():
+            reasons.append("Potvrď připravenost robota a bezpečnou pracovní oblast.")
+        if getattr(self, "_start_pending", False):
+            reasons.append("Čekám na odpověď controlleru.")
+        if getattr(self, "_start_accepted", False):
+            reasons.append("Sekvence už byla přijata – další start až po dokončení.")
+
+        self.start_button.setEnabled(not reasons)
+        self.start_requirements.setText(
+            "Připraveno ke spuštění." if not reasons
+            else "Proč nelze spustit měření:\n• " + "\n• ".join(reasons)
+        )
+        self.start_button.setToolTip("\n".join(reasons))
 
     def _start_measurement(self):
         if not self.start_button.isEnabled():
@@ -334,7 +363,7 @@ class MainWindow(QMainWindow):
         if success:
             self._start_accepted = True
             self.measure_log.appendPlainText("Start přijat: " + message)
-            self.statusBar().showMessage("Controller přijal měření; průběh zatím není připojen")
+            self.statusBar().showMessage("Controller přijal požadavek; sleduji /measurement/status")
         else:
             self.measure_log.appendPlainText("Start odmítnut: " + message)
             QMessageBox.warning(self, "Start odmítnut", message)
@@ -360,7 +389,7 @@ class MainWindow(QMainWindow):
             self.measure_log.appendPlainText(
                 f"[{state}] {completed}/{total}" + (f" – {message}" if message else "")
             )
-        if state in ("FINISHED", "ERROR", "IDLE"):
+        if state in ("FINISHED", "ERROR", "STOPPED"):
             self._start_accepted = False
             self._update_start_button()
 
@@ -442,32 +471,60 @@ class MainWindow(QMainWindow):
             button.setChecked(i == index)
 
     def _style(self):
+        # Explicit text colors override Qt/OS dark-palette defaults.
         self.setStyleSheet("""
-            QMainWindow, #content { background: #f5f7fb; }
-            #sidebar { background: #152238; }
-            #brand { font-size: 21px; font-weight: 800; color: white; letter-spacing: 2px; }
-            #sidebar #description { color: #9bb0cc; }
+            QMainWindow, QWidget, QFrame#content, QStackedWidget {
+                background: #f5f7fb; color: #18283d;
+            }
+            QLabel, QCheckBox, QGroupBox, QRadioButton {
+                color: #18283d; background: transparent;
+            }
+            QFrame#sidebar { background: #152238; }
+            #brand { font-size: 21px; font-weight: 800; color: #ffffff; letter-spacing: 2px; }
+            #sidebar QLabel { color: #d5e0f0; background: transparent; }
+            #sidebar QLabel#description { color: #b8cbe4; }
             QPushButton#nav { background: transparent; border: 0; text-align: left;
-                              color: #d0d9e8; padding: 13px; border-radius: 7px; }
-            QPushButton#nav:checked { background: #2d4e79; color: white; font-weight: bold; }
+                              color: #e2e9f3; padding: 13px; border-radius: 7px; }
+            QPushButton#nav:checked { background: #2d4e79; color: #ffffff; font-weight: bold; }
             QPushButton#nav:hover { background: #28405e; }
             #heading { font-size: 27px; font-weight: 750; color: #162338; }
-            #offline { background: #e9edf5; border-radius: 13px; padding: 8px 13px; color: #52627c; }
-            #description { color: #66748a; font-size: 12px; }
-            QGroupBox { background: white; border: 1px solid #dfe5ed; border-radius: 10px;
-                        margin-top: 14px; padding: 18px 12px 12px; font-weight: bold; color: #263a55; }
-            QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; }
-            #statusCard { background: white; border: 1px solid #dfe5ed; border-radius: 10px;
-                          padding: 20px; color: #283e5e; font-size: 15px; }
-            QPushButton { background: #245caa; color: white; border: none;
+            #offline { background: #e9edf5; border-radius: 13px; padding: 8px 13px; color: #3a4b63; }
+            QLabel#description { color: #43536a; font-size: 12px; }
+            QGroupBox { background: #ffffff; border: 1px solid #cfd8e5; border-radius: 10px;
+                        margin-top: 14px; padding: 18px 12px 12px; font-weight: bold; color: #21344f; }
+            QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px;
+                               color: #21344f; background: #ffffff; }
+            #statusCard { background: #ffffff; border: 1px solid #cfd8e5; border-radius: 10px;
+                          padding: 20px; color: #203651; font-size: 15px; }
+            QPushButton { background: #245caa; color: #ffffff; border: none;
                           border-radius: 7px; padding: 11px 15px; font-weight: bold; }
-            QPushButton:disabled { background: #dce2ea; color: #7b8797; }
+            QPushButton:disabled { background: #d6dfe9; color: #4b5870; }
             QPushButton:hover:!disabled { background: #1c4f95; }
-            QTableWidget { background: white; border: 1px solid #dfe5ed; gridline-color: #edf0f4; }
-            QHeaderView::section { background: #e9edf4; border: none; padding: 9px; font-weight: bold; }
-            QComboBox, QLineEdit { background: white; border: 1px solid #dce2eb; border-radius: 5px; padding: 8px; }
-            QProgressBar { border: 1px solid #d7dfe9; border-radius: 6px; height: 20px; text-align: center; }
+            QPushButton#secondaryButton { background: #e5ebf4; color: #182f50;
+                                          border: 1px solid #b9c9dc; }
+            QPushButton#secondaryButton:hover { background: #d4e0ef; }
+            QTableWidget, QTableView { background: #ffffff; color: #18283d;
+                alternate-background-color: #eef3f9; selection-background-color: #d3e5ff;
+                selection-color: #112c55; border: 1px solid #cfd8e5;
+                gridline-color: #e2e8f0; }
+            QTableWidget QTableCornerButton::section { background: #e9edf4; }
+            QHeaderView::section { background: #e9edf4; color: #253c59; border: none;
+                                   padding: 9px; font-weight: bold; }
+            QComboBox, QLineEdit, QSpinBox, QPlainTextEdit, QTextEdit {
+                background: #ffffff; color: #15263f;
+                border: 1px solid #c4cfdd; border-radius: 5px; padding: 8px;
+                selection-background-color: #c6ddfb; selection-color: #112c55;
+            }
+            QComboBox QAbstractItemView { background: #ffffff; color: #15263f;
+                selection-background-color: #d3e5ff; selection-color: #112c55; }
+            QPlainTextEdit { color: #15263f; }
+            QProgressBar { background: #e8eef5; color: #172d49; border: 1px solid #c4cfdd;
+                border-radius: 6px; height: 20px; text-align: center; }
             QProgressBar::chunk { background: #245caa; }
+            QStatusBar { background: #e8edf5; color: #1d3452; }
+            QLabel#startRequirements { background: #fff9e8; color: #62420a;
+                border: 1px solid #e0cd94; border-radius: 6px; padding: 9px; }
+            QMessageBox, QFileDialog { background: #f5f7fb; color: #18283d; }
         """)
 
 

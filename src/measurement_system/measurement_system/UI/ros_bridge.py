@@ -56,6 +56,9 @@ class RosBridge(QObject):
     def _check_service(self):
         self.service_available.emit(self.client.service_is_ready())
 
+    def check_service(self):
+        self._check_service()
+
     def start_measurement(self, csv_path):
         if self._start_future is not None:
             raise RuntimeError("Čekám na odpověď předchozího požadavku")
