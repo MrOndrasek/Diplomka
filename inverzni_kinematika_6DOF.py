@@ -326,12 +326,14 @@ def ball_movements(number_of_points,number_of_support_points):
                 else:
                     i+=1
                     q_0=result_point[1]
+                    if len(list_of_motions)%100==0:
+                        print(len(list_of_motions))
                     list_of_motions.append([math.degrees(q_0[0,0]),math.degrees(q_0[1,0]),math.degrees(q_0[2,0]),math.degrees(-q_0[3,0]),0,math.degrees(q_0[4,0]),math.degrees(q_0[5,0])])
                     list_of_motions.append([math.degrees(q_0_center[0,0]),math.degrees(q_0_center[1,0]),math.degrees(q_0_center[2,0]),math.degrees(-q_0_center[3,0]),0,math.degrees(q_0_center[4,0]),math.degrees(q_0_center[5,0])])
                     #print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
                     #print(f"[{math.degrees(q_0_center[0,0])},{math.degrees(q_0_center[1,0])},{math.degrees(q_0_center[2,0])},{-math.degrees(q_0_center[3,0])},{math.degrees(q_0_center[4,0])},{math.degrees(q_0_center[5,0])}],")
-                    point_number+=1
-                    print(point_number)
+            point_number+=1
+    
     export_positions_to_csv(list_of_motions)
 
 def export_positions_to_csv(positions, filename="positions.csv"):
@@ -357,4 +359,4 @@ def export_positions_to_csv(positions, filename="positions.csv"):
 
     print(f"Pozice uloženy do {filename}")
    
-ball_movements(1,60)
+ball_movements(9,100)
