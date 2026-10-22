@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 
 import zmq
+import os
 import psycopg2
 
 from measurement_system_interfaces.srv import SaveMeasurement
@@ -130,6 +131,28 @@ class DatabaseNode(Node):
         Leika_ZMQ_driver.end_connection()
         
         super().destroy_node()
+
+
+
+    def get_connection(self):
+        try:
+            conn = psycopg2.connect(
+                dbname=os.getenv("PGDATABASE", "laser_tracker_data"),
+                user=os.getenv("PGUSER", "dohnaon1"),
+                password=os.getenv("PGPASSWORD"),
+                host=os.getenv("PGHOST", "127.0.0.1"),
+                port=os.getenv("PGPORT", "5432"),
+                connect_timeout=5
+            )
+
+            self.get_logger().info("Connected to PostgreSQL")
+            return conn
+
+        except psycopg2.Error as e:
+            self.get_logger().error(
+                f"PostgreSQL connection failed: {e}"
+            )
+            return None
 
 def main(args=None):
     rclpy.init(args=args)
