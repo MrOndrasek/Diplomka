@@ -1,15 +1,17 @@
 """PySide6 concept interface for the Diplomka measurement system.
 
-No robot commands are sent by this module. Hardware actions remain disabled
-until the corresponding ROS2 workflow has been implemented and verified.
+StartMeasurement may command robot motion through the ROS2 controller.
+The user must explicitly arm the start button.
 """
 import csv
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
+from measurement_system.UI.ros_bridge import RosBridge
+from measurement_system.database_export import export_table
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -35,6 +37,25 @@ def explanation(text):
     return lbl
 
 
+
+
+class ExportWorker(QThread):
+    finished_ok = Signal(str, int)
+    failed = Signal(str)
+
+    def __init__(self, path, table="measurement_data"):
+        super().__init__()
+        self.path = path
+        self.table = table
+
+    def run(self):
+        try:
+            count = export_table(self.path, self.table)
+            self.finished_ok.emit(self.path, count)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -45,6 +66,11 @@ class MainWindow(QMainWindow):
         self.source_path = None
         self._build()
         self._style()
+        self.ros = RosBridge(self)
+        self.ros.service_available.connect(self._on_service_status)
+        self.ros.start_result.connect(self._on_start_result)
+        self.ros.measurement_status.connect(self._on_measurement_status)
+        self._update_start_button()
 
     def _build(self):
         root = QWidget()
@@ -71,7 +97,7 @@ class MainWindow(QMainWindow):
             side_layout.addWidget(btn)
             self.nav.append(btn)
         side_layout.addStretch(1)
-        side_layout.addWidget(explanation("REŽIM: Návrh UI\nPohyby robota jsou zakázané."))
+        side_layout.addWidget(explanation("REŽIM: ROS2 ovládání\nStart může spustit pohyb robota."))
         outer.addWidget(side)
         content = QFrame()
         content.setObjectName("content")
@@ -95,7 +121,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self._export())
         self.stack.addWidget(self._settings())
         outer.addWidget(content, 1)
-        self.statusBar().showMessage("Koncept UI • žádné příkazy nejsou odesílány robotovi")
+        self.statusBar().showMessage("UI připraveno; start vyžaduje připojení ROS2 a potvrzení")
         self._select(0)
 
     def _page(self, info):
@@ -226,47 +252,174 @@ class MainWindow(QMainWindow):
         self.total_label.setText(f"Importované pozice: {len(data)}")
         self.measure_count.setText(f"Načteno {len(data)} pozic · žádná zatím nebyla změřena")
         self.statusBar().showMessage(f"Načteno {len(data)} pozic ze souboru {filename}")
+        self._update_start_button()
 
     def _measurement(self):
-        page, lay = self._page("Automatická sekvence: pohyb → ustálení → Leica → potvrzené uložení → další bod. "
-                               "Příkazy pro skutečný pohyb jsou úmyslně vypnuté.")
+        page, lay = self._page(
+            "Spuštění ROS2 sekvence: Start pouze zahájí controller. "
+            "Výsledek služby nepotvrzuje dokončení celé série."
+        )
         self.measure_count = QLabel("Dosud nebyly importovány pozice")
+        self.measure_state = QLabel("Stav: IDLE")
+        lay.addWidget(self.measure_state)
         lay.addWidget(group("Připravená sekvence", self.measure_count))
-        progress = QProgressBar()
-        progress.setRange(0, 100)
-        progress.setValue(0)
-        lay.addWidget(progress)
+        self.controller_status = QLabel("Controller: nedostupný")
+        lay.addWidget(self.controller_status)
+        self.measure_progress = QProgressBar()
+        self.measure_progress.setRange(0, 100)
+        self.measure_progress.setValue(0)
+        lay.addWidget(self.measure_progress)
+        self.measure_progress.setFormat("%v / %m bodů")
+        self.arm_checkbox = QCheckBox(
+            "Potvrzuji, že pohybová oblast je bezpečná a robot je připraven."
+        )
+        self.arm_checkbox.toggled.connect(self._update_start_button)
+        lay.addWidget(self.arm_checkbox)
+        self.start_button = QPushButton("Spustit automatické měření")
+        self.start_button.setEnabled(False)
+        self.start_button.clicked.connect(self._start_measurement)
+        lay.addWidget(self.start_button)
+        self.measure_log = QPlainTextEdit()
+        self.measure_log.setReadOnly(True)
+        self.measure_log.setPlaceholderText("Události měření...")
+        lay.addWidget(group("Protokol událostí", self.measure_log))
+        lay.addWidget(group("Poznámka", explanation(
+            "Stav je načítán z /measurement/status. Zastavení sekvence dosud není implementováno."
+        )))
+        return page
+
+    def _on_service_status(self, available):
+        self._service_ready = available
+        self.controller_status.setText(
+            "Controller: služba dostupná" if available
+            else "Controller: služba nedostupná"
+        )
+        self._update_start_button()
+
+    def _update_start_button(self):
+        if not hasattr(self, "start_button"):
+            return
+        ready = (getattr(self, "_service_ready", False)
+                 and bool(self.source_path)
+                 and bool(self.rows)
+                 and self.format_combo.currentIndex() == 0
+                 and self.arm_checkbox.isChecked()
+                 and not getattr(self, "_start_pending", False)
+                 and not getattr(self, "_start_accepted", False))
+        self.start_button.setEnabled(ready)
+
+    def _start_measurement(self):
+        if not self.start_button.isEnabled():
+            return
+        answer = QMessageBox.question(
+            self, "Potvrdit měření",
+            f"Opravdu zahájit automatické měření {len(self.rows)} poloh?\n"
+            "Požadavek může uvést robota do pohybu.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self._start_pending = True
+            self._update_start_button()
+            self.ros.start_measurement(self.source_path)
+            self.measure_log.appendPlainText("Odesílám požadavek na start...")
+        except Exception as exc:
+            self._start_pending = False
+            self._update_start_button()
+            QMessageBox.warning(self, "Start se nezdařil", str(exc))
+
+    def _on_start_result(self, success, message):
+        self._start_pending = False
+        if success:
+            self._start_accepted = True
+            self.measure_log.appendPlainText("Start přijat: " + message)
+            self.statusBar().showMessage("Controller přijal měření; průběh zatím není připojen")
+        else:
+            self.measure_log.appendPlainText("Start odmítnut: " + message)
+            QMessageBox.warning(self, "Start odmítnut", message)
+        self._update_start_button()
+
+    def _on_measurement_status(self, data):
+        state = str(data.get("state", "UNKNOWN")).upper()
+        completed = max(0, int(data.get("completed", 0)))
+        total = max(0, int(data.get("total", 0)))
+        current = max(0, int(data.get("current_point", 0)))
+        message = str(data.get("message", ""))
+
+        self.measure_state.setText(f"Stav: {state}" + (f" – {message}" if message else ""))
+        self.measure_progress.setRange(0, max(total, 1))
+        self.measure_progress.setValue(min(completed, max(total, 1)))
+        self.measure_count.setText(
+            f"Dokončeno {completed} / {total} bodů"
+            + (f" · aktuální bod: {current}" if current else "")
+        )
+        signature = (state, completed, total, current, message)
+        if signature != getattr(self, "_last_measurement_status", None):
+            self._last_measurement_status = signature
+            self.measure_log.appendPlainText(
+                f"[{state}] {completed}/{total}" + (f" – {message}" if message else "")
+            )
+        if state in ("FINISHED", "ERROR", "IDLE"):
+            self._start_accepted = False
+            self._update_start_button()
+
+    def closeEvent(self, event):
+        if hasattr(self, "export_worker") and self.export_worker.isRunning():
+            QMessageBox.information(self, "Probíhá export", "Před zavřením počkej na dokončení exportu.")
+            event.ignore()
+            return
+        self.ros.close()
+        event.accept()
+
+    def _export(self):
+        page, lay = self._page("Export surových záznamů z PostgreSQL; výpočty citlivosti zůstávají mimo aplikaci.")
+        self.export_table_select = QComboBox()
+        self.export_table_select.addItems(["measurement_data", "table_plane_points"])
+        lay.addWidget(group("Databázová tabulka", self.export_table_select))
         buttons = QHBoxLayout()
-        for name in ["Spustit automatické měření", "Pozastavit", "Ukončit sekvenci"]:
-            btn = QPushButton(name + " (nedostupné)")
-            btn.setEnabled(False)
-            buttons.addWidget(btn)
+        self.btn_csv = QPushButton("Export do CSV")
+        self.btn_h5 = QPushButton("Export do HDF5")
+        self.btn_csv.clicked.connect(lambda: self._start_export("csv"))
+        self.btn_h5.clicked.connect(lambda: self._start_export("h5"))
+        buttons.addWidget(self.btn_csv)
+        buttons.addWidget(self.btn_h5)
         lay.addLayout(buttons)
-        lay.addWidget(group("Protokol událostí", explanation(
-            "Bude zaznamenávat ID bodu, čas příkazu, potvrzení pohybu, měření Leica, commit do databáze a chyby.")))
-        lay.addWidget(group("Bezpečnost", explanation(
-            "Automatické pohyby budou povoleny až po integraci ROS2, kontrole limitů, ochranného prostoru "
-            "a bezpečnostních funkcí řídicí jednotky KUKA.")))
+        self.export_status = QLabel("Připraveno. Připojení k databázi proběhne až po kliknutí.")
+        self.export_status.setWordWrap(True)
+        lay.addWidget(self.export_status)
+        lay.addWidget(explanation("PostgreSQL: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD (nebo ~/.pgpass). Exportuje se celá zvolená tabulka."))
         lay.addStretch()
         return page
 
-    def _export(self):
-        page, lay = self._page("Export výsledných měření přibude po napojení databáze. Žádné ilustrační hodnoty nebudou vydávány za naměřené.")
-        buttons = QHBoxLayout()
-        btn_csv = QPushButton("Export měření do CSV (nedostupné)")
-        btn_csv.setEnabled(False)
-        btn_h5 = QPushButton("Export měření do HDF5 (nedostupné)")
-        btn_h5.setEnabled(False)
-        buttons.addWidget(btn_csv)
-        buttons.addWidget(btn_h5)
-        lay.addWidget(group("Výsledky měření", explanation(
-            "Cílová pozice, skutečné q1–q7, FK poloha, původní souřadnice Leica, transformace, "
-            "časová razítka, ID kalibrace a stav bodu.")))
-        lay.addLayout(buttons)
-        lay.addWidget(group("Plán struktury HDF5", explanation(
-            "/metadata · /calibration · /targets · /measurements")))
-        lay.addStretch()
-        return page
+    def _start_export(self, fmt):
+        table = self.export_table_select.currentText()
+        ext = ".csv" if fmt == "csv" else ".h5"
+        filter_name = "CSV (*.csv)" if fmt == "csv" else "HDF5 (*.h5)"
+        path, _ = QFileDialog.getSaveFileName(self, "Uložit měření", f"{table}{ext}", filter_name)
+        if not path:
+            return
+        if not path.lower().endswith(ext):
+            path += ext
+        self.btn_csv.setEnabled(False)
+        self.btn_h5.setEnabled(False)
+        self.export_status.setText("Načítám data z PostgreSQL a exportuji…")
+        self.export_worker = ExportWorker(path, table)
+        self.export_worker.finished_ok.connect(self._export_finished)
+        self.export_worker.failed.connect(self._export_failed)
+        self.export_worker.start()
+
+    def _export_finished(self, path, count):
+        self.btn_csv.setEnabled(True)
+        self.btn_h5.setEnabled(True)
+        self.export_status.setText(f"Exportováno {count} řádků do {path}")
+        QMessageBox.information(self, "Export dokončen", f"Uloženo {count} řádků.\n{path}")
+
+    def _export_failed(self, message):
+        self.btn_csv.setEnabled(True)
+        self.btn_h5.setEnabled(True)
+        self.export_status.setText("Export selhal: " + message)
+        QMessageBox.warning(self, "Export se nezdařil", message)
 
     def _settings(self):
         page, lay = self._page("Konfigurace připojení bude oddělena od zdrojového kódu a nebude obsahovat hesla uložená v Gitu.")

@@ -296,14 +296,14 @@ def ball_movements(number_of_points,number_of_support_points):
                 ])  
         
         p_cil_center=np.array([random.randint(335,400),
-                               random.randint(-200,200),
+                               100,
                                random.randint(325,700)
                                ])
         
         result_center=joint_calculation(p_cil_center,R_cil_model,q_0,6000,0.01)
         i=0
+        point_id=1
         if result_center is False:
-            print(p_cil_center)
             continue
         else:
             q_0_center=result_center[1]
@@ -325,7 +325,9 @@ def ball_movements(number_of_points,number_of_support_points):
                     i+=1
                     q_0=result_point[1]
                     print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
+                    point_id+=1
                     print(f"[{math.degrees(q_0_center[0,0])},{math.degrees(q_0_center[1,0])},{math.degrees(q_0_center[2,0])},{-math.degrees(q_0_center[3,0])},{math.degrees(q_0_center[4,0])},{math.degrees(q_0_center[5,0])}],")
+                    point_id+=1
             point_number+=1
    
 ball_movements(5,60)

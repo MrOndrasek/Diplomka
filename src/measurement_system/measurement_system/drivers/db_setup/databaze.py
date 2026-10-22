@@ -42,9 +42,9 @@ def create_table():
             id SERIAL PRIMARY KEY,
             measurement_id INTEGER REFERENCES measurements(id),
             point TEXT NOT NULL,
-            x DOUBLE PRECISION,
-            y DOUBLE PRECISION,
-            z DOUBLE PRECISION
+            distance DOUBLE PRECISION,
+            angleHz DOUBLE PRECISION,
+            angleVt DOUBLE PRECISION
             )""")
     
     cur.close()

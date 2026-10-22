@@ -28,7 +28,8 @@ class DatabaseNode(Node):
             )
 
         # ZMQ
-        Leika_ZMQ_driver.connection()
+        self.leika=Leika_ZMQ_driver()
+        self.leika.connection()
 
         # Service pro start/stop ukládání
         self.save_service_ = self.create_service(
@@ -45,12 +46,12 @@ class DatabaseNode(Node):
     def read_tracker(self):
 
         #vycisti stara data
-        Leika_ZMQ_driver.clear_queue()
+        self.leika.clear_queue()
 
-        #timeout pro tracker
-        measured_values=Leika_ZMQ_driver.measure_point()
-
-        try:   
+        try:
+            timestamp,distance,angle_hz,angle_vt=(
+                self.leika.measure_point()
+            )   
             self.cur.execute(
                 """
                 INSERT INTO measurement_data
@@ -70,10 +71,10 @@ class DatabaseNode(Node):
                 VALUES (%s, %s, %s, %s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
-                    measured_values[1],
-                    measured_values[2],
-                    measured_values[3],
-                    measured_values[0],
+                    distance,
+                    angle_hz,
+                    angle_vt,
+                    timestamp,
                     *self.joints
                     
                 ),
@@ -116,27 +117,6 @@ class DatabaseNode(Node):
         self.joints=list(request.joints)
 
         success=self.read_tracker()
-
-
-    def get_connection(self):
-
-        try:
-
-            return psycopg2.connect(
-                database="laser_tracker_data",
-                user="dohnaon1",
-                password="1234",
-                host="127.0.0.1",
-                port=5432,
-            )
-
-        except Exception as e:
-
-            self.get_logger().error(
-                f"PostgreSQL connection failed: {e}"
-            )
-
-            return None
 
 
     def destroy_node(self):

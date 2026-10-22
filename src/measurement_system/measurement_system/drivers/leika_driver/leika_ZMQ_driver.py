@@ -1,42 +1,65 @@
 import zmq
 import struct
+import logging
+import time
 
 
 class Leika_ZMQ_driver():
 
     def __init__(self):
-        pass
+        self.ctx = None
+        self.sock = None
+
+        self.logger = logging.getLogger(__name__)
 
     def connection(self):
+        if self.sock is not None:
+             return
+        
         self.ctx=zmq.Context()
         self.sock=self.ctx.socket(zmq.SUB)
-        self.sock.connect("tcp://localhost:5555")
+
         self.sock.setsockopt(zmq.SUBSCRIBE,b"")
-        return None
+        self.sock.setsockopt(zmq.LINGER, 0)
+        self.sock.connect("tcp://localhost:5555")
+
 
     def end_connection(self):
-        self.sock.close()
-        self.ctx.term()
+        if self.sock is not None:
+            self.sock.close()
+            self.sock = None
+
+        if self.ctx is not None: 
+            self.ctx.term()
+            self.ctx = None
 
     def clear_queue(self):
+            if self.sock is None:
+                raise RuntimeError("Leica is not connected")
+
             count=0
-            while True:
+            start = time.monotonic()
+
+            while time.monotonic() - start < 0.1:
                 try:
                     self.sock.recv_multipart(flags=zmq.NOBLOCK)
                     count+=1
     
                 except zmq.Again:
                     break
+
             self.get_logger().info(
                 f"Discarded {count} old measurements"
             )
     
     def measure_point(self):
+        if self.sock is None:
+            raise RuntimeError("Leica is not connected")
+        
         self.clear_queue()
 
-        if not self.sock.poll(5000):
-             self.get_logger().error("Leika timeout")
-             return False
+        if not self.sock.poll(5000, zmq.POLLIN):
+             raise TimeoutError("Leica measurement timeout")
 
         try:
             timestamp_data, data=self.sock.recv_multipart()
@@ -59,12 +82,12 @@ class Leika_ZMQ_driver():
                     "<d", data, 4
                 )[0]
 
-            return timestamp,value_distance,value_angle_hz,value_angle_vt
+            return (timestamp,
+                    value_distance,
+                    value_angle_hz,
+                    value_angle_vt)
         
-        except Exception as e:
-
-             self.conn.rollback()
-             self.get_logger().error(
-                  "Leika read error"
-             )
-             return False
+        except (struct.error, ValueError) as e:
+            self.logger.error(f"Leica read error:{e}")
+            raise
+             
