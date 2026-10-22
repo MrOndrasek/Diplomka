@@ -5,6 +5,8 @@ from rclpy.node import Node
 from PySide6.QtCore import QObject, QTimer, Signal
 from measurement_system_interfaces.srv import StartMeasurement
 from std_msgs.msg import String
+from rclpy.executors import ExternalShutdownException
+from rclpy._rclpy_pybind11 import RCLError
 
 
 class RosBridge(QObject):
@@ -41,17 +43,18 @@ class RosBridge(QObject):
             self.node.get_logger().warning(f"Invalid measurement status: {exc}")
 
     def _spin_once(self):
-        rclpy.spin_once(self.node, timeout_sec=0.0)
-        if self._start_future is not None and self._start_future.done():
-            future = self._start_future
-            self._start_future = None
-            try:
-                reply = future.result()
-                if reply is None:
-                    raise RuntimeError("Služba nevrátila odpověď")
-                self.start_result.emit(bool(reply.success), str(reply.message))
-            except Exception as exc:
-                self.start_result.emit(False, str(exc))
+        if not rclpy.ok():
+            self.spin_timer.stop()
+            return
+
+        try:
+            rclpy.spin_once(
+                self.node,
+                timeout_sec=0.0
+            )
+
+        except (RCLError, ExternalShutdownException):
+            self.spin_timer.stop()
 
     def _check_service(self):
         self.service_available.emit(self.client.service_is_ready())
