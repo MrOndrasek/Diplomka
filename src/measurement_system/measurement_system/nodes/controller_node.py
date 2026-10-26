@@ -130,6 +130,8 @@ class MeasurementController(Node):
         self.position_index = 0
         self.future = None
 
+        self.stop_requested=False
+
         self.state = State.MOVING
 
         self.get_logger().info(
@@ -139,6 +141,10 @@ class MeasurementController(Node):
         return True
 
     def update(self):
+
+        if self.state not in (State.WAIT_MOVE, State.WAIT_MEASUREMENT):
+            if self.apply_stop_if_requested():
+                return
 
         if self.state == State.MOVING:
 
@@ -241,6 +247,32 @@ class MeasurementController(Node):
                 total=len(self.positions),
                 message=message
             )
+
+    def callback_stop_measurement(self, request, response):
+        busy = self.state not in (
+            State.IDLE, State.FINISHED, State.STOPPED, State.ERROR
+        )
+        if not busy:
+            response.success = False
+            response.message = "Žádná aktivní sekvence"
+            return response
+
+        self.stop_requested = True
+        response.success = True
+        response.message = "STOP přijat; sekvence skončí po aktuální operaci"
+        return response
+
+    def apply_stop_if_requested(self):
+        if not self.stop_requested:
+            return False
+        self.stop_requested = False
+        self.state = State.STOPPED
+        self.get_logger().info("Measurement sequence stopped")
+        self.status_publisher.publish(
+            state="STOPPED", completed=self.position_index,
+            total=len(self.positions), message="Zastaveno na žádost uživatele"
+        )
+        return True
 
 
 

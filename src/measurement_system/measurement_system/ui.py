@@ -7,8 +7,9 @@ import csv
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import Qt, QThread, Signal
-from measurement_system.ros_bridge import RosBridge
+from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
+import shutil
+from measurement_system.UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -59,20 +60,24 @@ class ExportWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Diplomka | Measurement Control")
+        self.setWindowTitle("Diplomka | Measurement Control — koncept UI")
         self.resize(1250, 780)
         self.rows = []
         self.headers = []
         self.source_path = None
-        self._start_pending = False
-        self._start_accepted = False
-        self._service_ready = False
         self._build()
         self._style()
         self.ros = RosBridge(self)
         self.ros.service_available.connect(self._on_service_status)
         self.ros.start_result.connect(self._on_start_result)
+        self.ros.stop_result.connect(self._on_stop_result)
         self.ros.measurement_status.connect(self._on_measurement_status)
+        self.ros.modules_status.connect(self._on_modules_status)
+        self._module_timer = QTimer(self)
+        self._module_timer.timeout.connect(self._refresh_modules)
+        self._module_timer.start(1000)
+        self._processes = {}
+        self._refresh_modules()
         self._update_start_button()
 
     def _build(self):
@@ -136,23 +141,100 @@ class MainWindow(QMainWindow):
         return widget, layout
 
     def _overview(self):
-        page, lay = self._page("Centrální panel měřicího systému. Stavové informace budou načítány z ROS2 uzlů.")
+        page, lay = self._page(
+            "Připojení modulů. Start uzlu není start měření. "
+            "Dostupnost ROS2 služby sama o sobě nepotvrzuje připojení zařízení."
+        )
         grid = QGridLayout()
-        for i, (name, desc) in enumerate([
-            ("KUKA LBR iiwa", "IIWA_Py3 · nezjištěno"),
-            ("Leica Tracker", "ZeroMQ · nezjištěno"),
-            ("PostgreSQL", "Připojení · nezjištěno"),
-            ("ROS2", "Uzly · nezjištěno"),
-        ]):
-            title = QLabel(f"{name}\n\n{desc}")
-            title.setObjectName("statusCard")
-            grid.addWidget(title, i // 2, i % 2)
+        self.module_labels = {}
+        self.module_buttons = {}
+        modules = [
+            ("robot", "KUKA LBR iiwa", "IIWA_Py3 / move_robot"),
+            ("leica", "Leica Tracker", "ZMQ stream / monitor"),
+            ("database", "PostgreSQL", "database_node / save_measurement"),
+            ("controller", "Measurement Controller", "start_measurement"),
+        ]
+        for i, (key, title, detail) in enumerate(modules):
+            box = QGroupBox(title)
+            column = QVBoxLayout(box)
+            column.addWidget(explanation(detail))
+            label = QLabel("Nespuštěno")
+            label.setObjectName("moduleState")
+            column.addWidget(label)
+            button = QPushButton("Připojit")
+            button.clicked.connect(lambda checked=False, k=key: self._connect_module(k))
+            column.addWidget(button)
+            self.module_labels[key] = label
+            self.module_buttons[key] = button
+            grid.addWidget(box, i // 2, i % 2)
         lay.addLayout(grid)
+        lay.addWidget(explanation(
+            "Leica: Při kliknutí spustíme monitor ZMQ na tcp://localhost:5555. "
+            "Pro skutečné spuštění publikačního driveru musí běžet leica-driver "
+            "samostatně nebo být nakonfigurován systémově."
+        ))
         self.total_label = QLabel("Importované pozice: 0")
-        lay.addWidget(group("Aktuální série", self.total_label,
-                            explanation("Žádná měřicí série zatím nebyla vytvořena.")))
+        lay.addWidget(group("Aktuální série", self.total_label))
         lay.addStretch()
         return page
+
+    def _connect_module(self, key):
+        existing = self._processes.get(key)
+        if existing is not None and existing.state() != QProcess.NotRunning:
+            return
+        if key == "leica":
+            command = [sys.executable, "-m", "measurement_system.leica_monitor"]
+        else:
+            exe = shutil.which("ros2")
+            if not exe:
+                QMessageBox.warning(self, "ROS2", "Příkaz ros2 není v PATH. Spusť UI ze sourcovaného ROS2 prostředí.")
+                return
+            names = {"robot": "robot_node", "database": "database_node", "controller": "controller_node"}
+            command = [exe, "run", "measurement_system", names[key]]
+        process = QProcess(self)
+        process.setProgram(command[0])
+        process.setArguments(command[1:])
+        process.setProcessChannelMode(QProcess.MergedChannels)
+        process.readyReadStandardOutput.connect(lambda k=key, p=process: self._process_output(k, p))
+        process.errorOccurred.connect(lambda err, k=key, p=process: self._process_error(k, p))
+        process.finished.connect(lambda code, status, k=key: self._process_finished(k, code))
+        self._processes[key] = process
+        self.module_labels[key].setText("Spouštím…")
+        self.module_buttons[key].setEnabled(False)
+        process.start()
+
+    def _process_output(self, key, process):
+        message = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
+        if message and ("ERROR" in message or "Traceback" in message):
+            self.statusBar().showMessage(f"{key}: {message[-200:]}", 10000)
+
+    def _process_error(self, key, process):
+        self.module_labels[key].setText(f"Chyba spuštění: {process.errorString()}")
+        self.module_buttons[key].setEnabled(True)
+
+    def _process_finished(self, key, code):
+        self.module_labels[key].setText(f"Proces skončil (kód {code})")
+        self.module_buttons[key].setEnabled(True)
+
+    def _refresh_modules(self):
+        if hasattr(self, "ros"):
+            self.ros.check_modules()
+
+    def _on_modules_status(self, statuses):
+        for key, ready in statuses.items():
+            if key not in self.module_labels:
+                continue
+            process = self._processes.get(key)
+            alive = process is not None and process.state() != QProcess.NotRunning
+            if ready:
+                text = "Přijímá data ZMQ" if key == "leica" else "ROS2 služba dostupná (hardware neověřen)"
+            elif alive:
+                text = "Proces běží, čekám na službu/data"
+            else:
+                text = "Není dostupné"
+            self.module_labels[key].setText(text)
+            self.module_buttons[key].setEnabled(not alive and not ready)
+            self.module_buttons[key].setText("Připojeno" if ready else "Připojit")
 
     def _calibration(self):
         page, lay = self._page("Kalibrace transformací Leica → stůl → báze robota. Měření bodů se doplní po napojení na tracker a ROS2.")
@@ -182,7 +264,6 @@ class MainWindow(QMainWindow):
         self.format_combo = QComboBox()
         self.format_combo.addItems(["Kloubové pozice (q1–q7)", "Kartézské pozice (x,y,z,rx,ry,rz)"])
         self.format_combo.currentIndexChanged.connect(self._refresh_import_hint)
-        self.format_combo.currentIndexChanged.connect(lambda _index: self._update_start_button())
         bar.addWidget(self.format_combo)
         open_btn = QPushButton("Načíst CSV…")
         open_btn.clicked.connect(self._load_csv)
@@ -283,20 +364,16 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._start_measurement)
         lay.addWidget(self.start_button)
-        self.start_requirements = QLabel("")
-        self.start_requirements.setWordWrap(True)
-        self.start_requirements.setObjectName("startRequirements")
-        lay.addWidget(self.start_requirements)
-        check_btn = QPushButton("Ověřit připojení ke controlleru")
-        check_btn.setObjectName("secondaryButton")
-        check_btn.clicked.connect(self._check_controller)
-        lay.addWidget(check_btn)
+        self.stop_button = QPushButton("Zastavit sekvenci po aktuálním kroku")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self._stop_measurement)
+        lay.addWidget(self.stop_button)
         self.measure_log = QPlainTextEdit()
         self.measure_log.setReadOnly(True)
         self.measure_log.setPlaceholderText("Události měření...")
         lay.addWidget(group("Protokol událostí", self.measure_log))
         lay.addWidget(group("Poznámka", explanation(
-            "Stav je načítán z /measurement/status. Zastavení sekvence dosud není implementováno."
+            "Stav je načítán z /measurement/status. STOP dokončí již zahájený pohyb nebo měření; nenahrazuje nouzové zastavení KUKA."
         )))
         return page
 
@@ -308,34 +385,54 @@ class MainWindow(QMainWindow):
         )
         self._update_start_button()
 
-    def _check_controller(self):
-        self.ros.check_service()
-        self.measure_log.appendPlainText("Kontroluji službu /start_measurement…")
-
     def _update_start_button(self):
         if not hasattr(self, "start_button"):
             return
+        ready = (getattr(self, "_service_ready", False)
+                 and bool(self.source_path)
+                 and bool(self.rows)
+                 and self.format_combo.currentIndex() == 0
+                 and self.arm_checkbox.isChecked()
+                 and not getattr(self, "_start_pending", False)
+                 and not getattr(self, "_start_accepted", False))
+        self.start_button.setEnabled(ready)
+        self._update_stop_button()
 
-        reasons = []
-        if not bool(self.source_path) or not bool(self.rows):
-            reasons.append("Načti CSV s kloubovými pozicemi.")
-        if self.format_combo.currentIndex() != 0:
-            reasons.append("Pro řízení robota vyber kloubové pozice q1–q7.")
-        if not getattr(self, "_service_ready", False):
-            reasons.append("ROS2 služba /start_measurement není dostupná. Spusť controller_node a ověř definici StartMeasurement.srv.")
-        if not self.arm_checkbox.isChecked():
-            reasons.append("Potvrď připravenost robota a bezpečnou pracovní oblast.")
-        if getattr(self, "_start_pending", False):
-            reasons.append("Čekám na odpověď controlleru.")
-        if getattr(self, "_start_accepted", False):
-            reasons.append("Sekvence už byla přijata – další start až po dokončení.")
-
-        self.start_button.setEnabled(not reasons)
-        self.start_requirements.setText(
-            "Připraveno ke spuštění." if not reasons
-            else "Proč nelze spustit měření:\n• " + "\n• ".join(reasons)
+    def _update_stop_button(self):
+        if not hasattr(self, "stop_button") or not hasattr(self, "ros"):
+            return
+        active = (getattr(self, "_start_pending", False)
+                  or getattr(self, "_start_accepted", False))
+        self.stop_button.setEnabled(
+            active and self.ros.stop_client.service_is_ready()
+            and not getattr(self, "_stop_pending", False)
         )
-        self.start_button.setToolTip("\n".join(reasons))
+
+    def _stop_measurement(self):
+        answer = QMessageBox.question(
+            self, "Zastavit měření",
+            "Zastavit sekvenci po dokončení probíhajícího kroku?\n"
+            "Toto tlačítko NEZASTAVUJE pohyb robota nouzově.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self._stop_pending = True
+            self._update_stop_button()
+            self.ros.stop_measurement()
+            self.measure_log.appendPlainText("Požadavek STOP odeslán...")
+        except Exception as exc:
+            self._stop_pending = False
+            self._update_stop_button()
+            QMessageBox.warning(self, "STOP nebyl odeslán", str(exc))
+
+    def _on_stop_result(self, success, message):
+        self._stop_pending = False
+        self.measure_log.appendPlainText(("STOP přijat: " if success else "STOP odmítnut: ") + message)
+        if not success:
+            QMessageBox.warning(self, "STOP odmítnut", message)
+        self._update_stop_button()
 
     def _start_measurement(self):
         if not self.start_button.isEnabled():
@@ -363,7 +460,7 @@ class MainWindow(QMainWindow):
         if success:
             self._start_accepted = True
             self.measure_log.appendPlainText("Start přijat: " + message)
-            self.statusBar().showMessage("Controller přijal požadavek; sleduji /measurement/status")
+            self.statusBar().showMessage("Controller přijal měření; průběh zatím není připojen")
         else:
             self.measure_log.appendPlainText("Start odmítnut: " + message)
             QMessageBox.warning(self, "Start odmítnut", message)
@@ -389,8 +486,9 @@ class MainWindow(QMainWindow):
             self.measure_log.appendPlainText(
                 f"[{state}] {completed}/{total}" + (f" – {message}" if message else "")
             )
-        if state in ("FINISHED", "ERROR", "STOPPED"):
+        if state in ("FINISHED", "STOPPED", "ERROR", "IDLE"):
             self._start_accepted = False
+            self._stop_pending = False
             self._update_start_button()
 
     def closeEvent(self, event):
@@ -398,7 +496,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Probíhá export", "Před zavřením počkej na dokončení exportu.")
             event.ignore()
             return
+        self._module_timer.stop()
         self.ros.close()
+        for process in getattr(self, "_processes", {}).values():
+            if process.state() != QProcess.NotRunning:
+                process.terminate()
+                if not process.waitForFinished(1500):
+                    process.kill()
+                    process.waitForFinished(1000)
         event.accept()
 
     def _export(self):
@@ -471,60 +576,33 @@ class MainWindow(QMainWindow):
             button.setChecked(i == index)
 
     def _style(self):
-        # Explicit text colors override Qt/OS dark-palette defaults.
         self.setStyleSheet("""
-            QMainWindow, QWidget, QFrame#content, QStackedWidget {
-                background: #f5f7fb; color: #18283d;
-            }
-            QLabel, QCheckBox, QGroupBox, QRadioButton {
-                color: #18283d; background: transparent;
-            }
-            QFrame#sidebar { background: #152238; }
-            #brand { font-size: 21px; font-weight: 800; color: #ffffff; letter-spacing: 2px; }
-            #sidebar QLabel { color: #d5e0f0; background: transparent; }
-            #sidebar QLabel#description { color: #b8cbe4; }
+            QMainWindow, #content { background: #f5f7fb; }
+            #sidebar { background: #152238; }
+            #brand { font-size: 21px; font-weight: 800; color: white; letter-spacing: 2px; }
+            #sidebar #description { color: #9bb0cc; }
             QPushButton#nav { background: transparent; border: 0; text-align: left;
-                              color: #e2e9f3; padding: 13px; border-radius: 7px; }
-            QPushButton#nav:checked { background: #2d4e79; color: #ffffff; font-weight: bold; }
+                              color: #d0d9e8; padding: 13px; border-radius: 7px; }
+            QPushButton#nav:checked { background: #2d4e79; color: white; font-weight: bold; }
             QPushButton#nav:hover { background: #28405e; }
             #heading { font-size: 27px; font-weight: 750; color: #162338; }
-            #offline { background: #e9edf5; border-radius: 13px; padding: 8px 13px; color: #3a4b63; }
-            QLabel#description { color: #43536a; font-size: 12px; }
-            QGroupBox { background: #ffffff; border: 1px solid #cfd8e5; border-radius: 10px;
-                        margin-top: 14px; padding: 18px 12px 12px; font-weight: bold; color: #21344f; }
-            QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px;
-                               color: #21344f; background: #ffffff; }
-            #statusCard { background: #ffffff; border: 1px solid #cfd8e5; border-radius: 10px;
-                          padding: 20px; color: #203651; font-size: 15px; }
-            QPushButton { background: #245caa; color: #ffffff; border: none;
+            #offline { background: #e9edf5; border-radius: 13px; padding: 8px 13px; color: #52627c; }
+            #description { color: #66748a; font-size: 12px; }
+            QLabel#moduleState { color: #1f2937; font-size: 13px; }
+            QGroupBox { background: white; border: 1px solid #dfe5ed; border-radius: 10px;
+                        margin-top: 14px; padding: 18px 12px 12px; font-weight: bold; color: #263a55; }
+            QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; }
+            #statusCard { background: white; border: 1px solid #dfe5ed; border-radius: 10px;
+                          padding: 20px; color: #283e5e; font-size: 15px; }
+            QPushButton { background: #245caa; color: white; border: none;
                           border-radius: 7px; padding: 11px 15px; font-weight: bold; }
-            QPushButton:disabled { background: #d6dfe9; color: #4b5870; }
+            QPushButton:disabled { background: #dce2ea; color: #7b8797; }
             QPushButton:hover:!disabled { background: #1c4f95; }
-            QPushButton#secondaryButton { background: #e5ebf4; color: #182f50;
-                                          border: 1px solid #b9c9dc; }
-            QPushButton#secondaryButton:hover { background: #d4e0ef; }
-            QTableWidget, QTableView { background: #ffffff; color: #18283d;
-                alternate-background-color: #eef3f9; selection-background-color: #d3e5ff;
-                selection-color: #112c55; border: 1px solid #cfd8e5;
-                gridline-color: #e2e8f0; }
-            QTableWidget QTableCornerButton::section { background: #e9edf4; }
-            QHeaderView::section { background: #e9edf4; color: #253c59; border: none;
-                                   padding: 9px; font-weight: bold; }
-            QComboBox, QLineEdit, QSpinBox, QPlainTextEdit, QTextEdit {
-                background: #ffffff; color: #15263f;
-                border: 1px solid #c4cfdd; border-radius: 5px; padding: 8px;
-                selection-background-color: #c6ddfb; selection-color: #112c55;
-            }
-            QComboBox QAbstractItemView { background: #ffffff; color: #15263f;
-                selection-background-color: #d3e5ff; selection-color: #112c55; }
-            QPlainTextEdit { color: #15263f; }
-            QProgressBar { background: #e8eef5; color: #172d49; border: 1px solid #c4cfdd;
-                border-radius: 6px; height: 20px; text-align: center; }
+            QTableWidget { background: white; border: 1px solid #dfe5ed; gridline-color: #edf0f4; }
+            QHeaderView::section { background: #e9edf4; border: none; padding: 9px; font-weight: bold; }
+            QComboBox, QLineEdit { background: white; border: 1px solid #dce2eb; border-radius: 5px; padding: 8px; }
+            QProgressBar { border: 1px solid #d7dfe9; border-radius: 6px; height: 20px; text-align: center; }
             QProgressBar::chunk { background: #245caa; }
-            QStatusBar { background: #e8edf5; color: #1d3452; }
-            QLabel#startRequirements { background: #fff9e8; color: #62420a;
-                border: 1px solid #e0cd94; border-radius: 6px; padding: 9px; }
-            QMessageBox, QFileDialog { background: #f5f7fb; color: #18283d; }
         """)
 
 
