@@ -23,11 +23,14 @@ class mySock:
             print('Error: TCP transform shall be a tuple of 6')
             print('Program terminated')
             return
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.settimeout(5.0)  # timeout for connection only
             self.sock.connect(tup)
-        except:
-            print('Error, could not establish a connection to the robot')
+            self.sock.settimeout(None)  # motion confirmation can be blocking
+        except OSError as exc:
+            self.sock.close()
+            raise ConnectionError(f'Unable to connect to robot {tup}: {exc}') from exc
         time.sleep(1)
         # self.buff = StringIO.StringIO(2048)  
         # Update the transform of the TCP if one is specified
@@ -68,17 +71,28 @@ class mySock:
                 print('Error, (exception) could not mount the specified TCP')
 
     def send(self, msg):
-        bytes = msg.encode()
-        self.sock.send(bytes)
+        try:
+            self.sock.sendall(msg.encode('utf-8'))
+        except OSError as exc:
+            raise ConnectionError(f'KUKA socket send failed: {exc}') from exc
 
     def receive(self):
         # self.sock.settimeout(30)
-        daBytes = self.sock.recv(1024)
+        try:
+            daBytes = self.sock.recv(1024)
+        except OSError as exc:
+            raise ConnectionError(f'KUKA socket receive failed: {exc}') from exc
+        if not daBytes:
+            raise ConnectionError('KUKA closed TCP connection (empty receive)')
         confirmationMessage = daBytes.decode('utf-8')
         return confirmationMessage
 
     def close(self):
         endCommand = 'end\n'
-        self.send(endCommand)
-        time.sleep(1)  # sleep for one seconds
-        self.sock.close()
+        try:
+            self.send(endCommand)
+            time.sleep(1)  # give KUKA server time to process end
+        except ConnectionError:
+            pass
+        finally:
+            self.sock.close()

@@ -41,6 +41,7 @@ class RobotNode(Node): # MODIFY NAME
             except Exception as e:
                 response.success = False
                 response.message = str(e)
+                self.get_logger().error(f"KUKA movement failed: {e}")
             return response
     def closing(self):
         if self.robot_ is not None:

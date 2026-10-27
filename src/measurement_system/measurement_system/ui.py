@@ -80,6 +80,8 @@ class MainWindow(QMainWindow):
         self._module_timer.timeout.connect(self._refresh_modules)
         self._module_timer.start(1000)
         self._processes = {}
+        self._module_terminating = set()
+        self._latest_sequence_state = "IDLE"
         self._refresh_modules()
         self._update_start_button()
 
@@ -166,7 +168,7 @@ class MainWindow(QMainWindow):
             label.setObjectName("moduleState")
             column.addWidget(label)
             button = QPushButton("Připojit")
-            button.clicked.connect(lambda checked=False, k=key: self._connect_module(k))
+            button.clicked.connect(lambda checked=False, k=key: self._toggle_module(k))
             column.addWidget(button)
             self.module_labels[key] = label
             self.module_buttons[key] = button
@@ -181,6 +183,52 @@ class MainWindow(QMainWindow):
         lay.addWidget(group("Aktuální série", self.total_label))
         lay.addStretch()
         return page
+
+    def _sequence_running(self):
+        return self._latest_sequence_state not in (
+            "IDLE", "FINISHED", "STOPPED", "ERROR"
+        )
+
+    def _toggle_module(self, key):
+        process = self._processes.get(key)
+        if process is not None and process.state() != QProcess.NotRunning:
+            self._disconnect_module(key)
+        else:
+            self._connect_module(key)
+
+    def _disconnect_module(self, key):
+        process = self._processes.get(key)
+        if process is None or process.state() == QProcess.NotRunning:
+            QMessageBox.information(
+                self, "Externě spuštěný uzel",
+                "Tento uzel nebyl spuštěn z UI. Nelze jej bezpečně ukončit tímto tlačítkem."
+            )
+            return
+        if self._sequence_running() and key in ("robot", "database", "controller", "calibration", "leica"):
+            QMessageBox.warning(
+                self, "Probíhá sekvence",
+                "Nejdříve požádej o zastavení sekvence a počkej na stav STOPPED nebo FINISHED."
+            )
+            return
+        reply = QMessageBox.question(
+            self, "Ukončit modul",
+            f"Ukončit modul {key}? Připojení k zařízení může být ukončeno."
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._module_terminating.add(key)
+        self.module_labels[key].setText("Ukončuji…")
+        self.module_buttons[key].setEnabled(False)
+        process.terminate()  # asynchronous, not blocking Qt event loop
+        QTimer.singleShot(3000, lambda k=key, p=process: self._check_terminated(k, p))
+
+    def _check_terminated(self, key, process):
+        if process.state() != QProcess.NotRunning and key in self._module_terminating:
+            self.module_labels[key].setText("Ukončení trvá dlouho – zkontroluj uzel v terminálu")
+            self.statusBar().showMessage(
+                f"{key} stále běží; automatické SIGKILL je zakázáno kvůli stavu robota.", 10000
+            )
+            self.module_buttons[key].setEnabled(True)
 
     def _connect_module(self, key):
         existing = self._processes.get(key)
@@ -218,6 +266,7 @@ class MainWindow(QMainWindow):
 
     def _process_finished(self, key, code):
         self.module_labels[key].setText(f"Proces skončil (kód {code})")
+        self._module_terminating.discard(key)
         self.module_buttons[key].setEnabled(True)
 
     def _refresh_modules(self):
@@ -237,8 +286,16 @@ class MainWindow(QMainWindow):
             else:
                 text = "Není dostupné"
             self.module_labels[key].setText(text)
-            self.module_buttons[key].setEnabled(not alive and not ready)
-            self.module_buttons[key].setText("Připojeno" if ready else "Připojit")
+            terminating = key in self._module_terminating
+            if alive:
+                self.module_buttons[key].setText("Odpojit / ukončit uzel")
+                self.module_buttons[key].setEnabled(not terminating and not self._sequence_running())
+            elif ready:
+                self.module_buttons[key].setText("Externě spuštěno")
+                self.module_buttons[key].setEnabled(False)
+            else:
+                self.module_buttons[key].setText("Připojit")
+                self.module_buttons[key].setEnabled(True)
 
     def _calibration(self):
         page, lay = self._page("Kalibrace transformací Leica → stůl → báze robota. Měření bodů se doplní po napojení na tracker a ROS2.")
@@ -520,7 +577,8 @@ class MainWindow(QMainWindow):
         self._update_start_button()
 
     def _on_measurement_status(self, data):
-        state = str(data.get("state", "UNKNOWN")).upper()
+        state = str(data.get("state", "UNKNOWN"))
+        self._latest_sequence_state = state.upper()
         completed = max(0, int(data.get("completed", 0)))
         total = max(0, int(data.get("total", 0)))
         current = max(0, int(data.get("current_point", 0)))
@@ -545,18 +603,24 @@ class MainWindow(QMainWindow):
             self._update_start_button()
 
     def closeEvent(self, event):
+        if self._sequence_running():
+            QMessageBox.warning(self, "Probíhá sekvence", "Před ukončením UI zastav měřicí sekvenci a počkej na dokončení aktuální operace.")
+            event.ignore()
+            return
         if hasattr(self, "export_worker") and self.export_worker.isRunning():
             QMessageBox.information(self, "Probíhá export", "Před zavřením počkej na dokončení exportu.")
             event.ignore()
             return
         self._module_timer.stop()
-        self.ros.close()
         for process in getattr(self, "_processes", {}).values():
             if process.state() != QProcess.NotRunning:
                 process.terminate()
-                if not process.waitForFinished(1500):
-                    process.kill()
-                    process.waitForFinished(1000)
+                process.waitForFinished(1500)
+                if process.state() != QProcess.NotRunning:
+                    QMessageBox.warning(self, "Uzel stále běží", "Některý uzel se neukončil. Před uzavřením UI jej bezpečně ukonči.")
+                    event.ignore()
+                    return
+        self.ros.close()
         event.accept()
 
     def _export(self):
