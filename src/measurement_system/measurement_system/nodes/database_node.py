@@ -1,175 +1,95 @@
 #!/usr/bin/env python3
-
-import rclpy
-from rclpy.node import Node
-
-import zmq
+"""ROS2 endpoint for one Leica sample and an atomic PostgreSQL insert."""
 import os
 import psycopg2
-
+import rclpy
+from rclpy.node import Node
 from measurement_system_interfaces.srv import SaveMeasurement
-from measurement_system.measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
+from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
 
 class DatabaseNode(Node):
-
     def __init__(self):
         super().__init__("database_node")
-
-        # PostgreSQL
         self.conn = self.get_connection()
-
-        if self.conn:
-            self.cur = self.conn.cursor()
-            self.get_logger().info("Connected to PostgreSQL")
-        else:
-            self.cur = None
-            self.get_logger().error(
-                "Could not connect to PostgreSQL"
-            )
-
-        # ZMQ
-        self.leika=Leika_ZMQ_driver()
+        self.leika = Leika_ZMQ_driver()
         self.leika.connection()
-
-        # Service pro start/stop ukládání
         self.save_service_ = self.create_service(
-            SaveMeasurement,
-            "save_measurement",
-            self.callback_save_measurement
+            SaveMeasurement, "/save_measurement", self.callback_save_measurement
         )
-
-        self.get_logger().info(
-            "Database node started"
-        )
-
-
-    def read_tracker(self):
-
-        #vycisti stara data
-        self.leika.clear_queue()
-
-        try:
-            timestamp,distance,angle_hz,angle_vt=(
-                self.leika.measure_point()
-            )   
-            self.cur.execute(
-                """
-                INSERT INTO measurement_data
-                (
-                    distance,
-                    angleHz,
-                    angleVt,
-                    time_of_meas,
-                    q1,
-                    q2,
-                    q3,
-                    q4,
-                    q5,
-                    q6,
-                    q7
-                )
-                VALUES (%s, %s, %s, %s,%s,%s,%s,%s,%s,%s,%s)
-                """,
-                (
-                    distance,
-                    angle_hz,
-                    angle_vt,
-                    timestamp,
-                    *self.joints
-                    
-                ),
-            )
-
-            self.conn.commit()
-            return False
-        
-        except Exception as e:
-
-                    self.conn.rollback()
-
-                    self.get_logger().error(
-                        f"Database error: {e}"
-                    )
-                    return False
-            
-
-
-    def callback_save_measurement(
-        self,
-        request,
-        response
-    ):
-        if not request.save:
-            response.success=True
-            response.message="Measurrement skipped"
-            return response
-
-        if self.cur is None:
-            response.success=False
-            response.message="Database unavaiable"
-            return response
-
-        if len(request.joints) != 7:
-            response.success=False
-            response.message="Invalid joint position"
-            return response
-
-        self.joints=list(request.joints)
-
-        success=self.read_tracker()
-
-
-    def destroy_node(self):
-
-        if self.cur:
-            self.cur.close()
-
-        if self.conn:
-            self.conn.close()
-
-        Leika_ZMQ_driver.end_connection()
-        
-        super().destroy_node()
-
-
+        if self.conn is None:
+            self.get_logger().warning("PostgreSQL unavailable; measurement requests will fail")
 
     def get_connection(self):
         try:
-            conn = psycopg2.connect(
+            return psycopg2.connect(
                 dbname=os.getenv("PGDATABASE", "laser_tracker_data"),
                 user=os.getenv("PGUSER", "dohnaon1"),
-                password=os.getenv("PGPASSWORD"),
                 host=os.getenv("PGHOST", "127.0.0.1"),
                 port=os.getenv("PGPORT", "5432"),
-                connect_timeout=5
+                connect_timeout=5,
             )
-
-            self.get_logger().info("Connected to PostgreSQL")
-            return conn
-
-        except psycopg2.Error as e:
-            self.get_logger().error(
-                f"PostgreSQL connection failed: {e}"
-            )
+        except psycopg2.Error as exc:
+            self.get_logger().error(f"PostgreSQL connection failed: {exc}")
             return None
+
+    def read_tracker(self, joints):
+        """Acquire one new sample and commit it before returning success."""
+        if self.conn is None or self.conn.closed:
+            raise RuntimeError("Database is disconnected")
+        timestamp, distance, angle_hz, angle_vt = self.leika.measure_point()
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO measurement_data
+                    (distance, angleHz, angleVt, time_of_meas,
+                     q1, q2, q3, q4, q5, q6, q7)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (distance, angle_hz, angle_vt, timestamp, *joints))
+            self.conn.commit()
+            return True
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def callback_save_measurement(self, request, response):
+        if not request.save:
+            response.success = True
+            response.message = "Measurement skipped"
+            return response
+        if len(request.joints) != 7:
+            response.success = False
+            response.message = "Exactly seven joint angles are required"
+            return response
+        try:
+            self.read_tracker(list(request.joints))
+            response.success = True
+            response.message = "Measurement committed to PostgreSQL"
+        except Exception as exc:
+            response.success = False
+            response.message = str(exc)
+            self.get_logger().error(f"Measurement failed: {exc}")
+        return response
+
+    def destroy_node(self):
+        self.leika.end_connection()
+        if self.conn is not None:
+            self.conn.close()
+        return super().destroy_node()
+
 
 def main(args=None):
     rclpy.init(args=args)
-
     node = DatabaseNode()
-
     try:
         rclpy.spin(node)
-
     except KeyboardInterrupt:
         pass
-
     finally:
         node.destroy_node()
-
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

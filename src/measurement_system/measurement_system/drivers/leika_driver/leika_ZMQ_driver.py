@@ -48,7 +48,7 @@ class Leika_ZMQ_driver():
                 except zmq.Again:
                     break
 
-            self.get_logger().info(
+            self.logger.info(
                 f"Discarded {count} old measurements"
             )
     
@@ -63,6 +63,8 @@ class Leika_ZMQ_driver():
 
         try:
             timestamp_data, data=self.sock.recv_multipart()
+            if len(timestamp_data) != 8 or len(data) < 28:
+                raise ValueError("Invalid Leica packet size")
                     
             timestamp = int.from_bytes(
                 timestamp_data,

@@ -30,6 +30,7 @@ setup(
             "controller_node=measurement_system.nodes.controller_node:main",
             "database_node=measurement_system.nodes.database_node:main",
             "measurement_ui=measurement_system.ui:main",
+            "robot_calibration_node=measurement_system.nodes.robot_calibration_node:main",
 
         ],
     },

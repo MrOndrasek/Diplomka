@@ -8,6 +8,7 @@ from measurement_system.drivers.kuka_driver.iiwaPy3 import iiwaPy3
 class RobotNode(Node): # MODIFY NAME
     def __init__(self):
         super().__init__("robot_node") # MODIFY NAME
+        self.robot_ = None
         try:
             self.robot_ = iiwaPy3("172.31.1.147")
             self.get_logger().info("Robot connected")
@@ -16,6 +17,8 @@ class RobotNode(Node): # MODIFY NAME
             self.get_logger().error(
                 f"Robot connection failed: {e}"
             )
+        if self.robot_ is None:
+            raise RuntimeError("Robot connection failed; refusing to advertise /move_robot")
         self.move_robot_service_ = self.create_service(MoveRobot,"move_robot",self.callback_move_robot)
 
      
@@ -40,7 +43,8 @@ class RobotNode(Node): # MODIFY NAME
                 response.message = str(e)
             return response
     def closing(self):
-        self.robot_.close()
+        if self.robot_ is not None:
+            self.robot_.close()
 
 
 def main(args=None):
@@ -55,8 +59,8 @@ def main(args=None):
         pass
 
     finally:
-        node.destroy_node()
         node.closing()
+        node.destroy_node()
 
         if rclpy.ok():
             rclpy.shutdown()

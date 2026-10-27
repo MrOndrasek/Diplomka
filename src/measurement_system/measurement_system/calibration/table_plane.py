@@ -1,88 +1,58 @@
+"""Capture three Leica samples defining a table frame (no transforms calculated)."""
+import logging
+import os
 import psycopg2
+from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
-from measurement_system.measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
-class table_plane():
-
+class TablePlane:
     def __init__(self):
-        self.points={}
-        self.leika=Leika_ZMQ_driver()
+        self.logger = logging.getLogger(__name__)
+        self.points = {}
+        self.leika = Leika_ZMQ_driver()
+        self.conn = None
+        self.cur = None
         self.leika.connection()
-        self.conn = self.get_connection()
+        try:
+            self.conn = psycopg2.connect(
+                dbname=os.getenv("PGDATABASE", "laser_tracker_data"),
+                user=os.getenv("PGUSER", "dohnaon1"),
+                host=os.getenv("PGHOST", "127.0.0.1"),
+                port=os.getenv("PGPORT", "5432"), connect_timeout=5)
+            self.cur = self.conn.cursor()
+        except Exception:
+            self.leika.end_connection()
+            raise
 
-        if self.conn:
-                    self.cur = self.conn.cursor()
-                    self.get_logger().info("Connected to PostgreSQL")
-        else:
-                    self.cur = None
-                    self.get_logger().error(
-                        "Could not connect to PostgreSQL"
-                    )
-
-    def measure_table_point(self,point_ID):
-        self.points[point_ID]=self.leika.measure_point()
+    def measure_table_point(self, point_id):
+        if point_id not in (1, 2, 3):
+            raise ValueError("Expected P1, P2 or P3 as integers 1, 2, 3")
+        self.points[point_id] = self.leika.measure_point()
+        return self.points[point_id]
 
     def send_to_database(self):
-        
+        if set(self.points) != {1, 2, 3}:
+            raise ValueError("All three table points must be measured")
         try:
-            for point_ID, measurement in self.points.items():
-                timestamp,distance,angle_hz,angle_vt=measurement
-                self.cur.execute(
-                            """
-                            INSERT INTO table_plane_points
-                            (
-                                point,
-                                distance,
-                                angleHz,
-                                angleVt
-
-                            )
-                            VALUES (%s, %s, %s, %s)
-                            """,
-                            (   
-                                point_ID,
-                                distance,
-                                angle_hz,
-                                angle_vt
-                            ),
-                        )
-            
-                self.conn.commit()
+            for point_id, (timestamp, distance, hz, vt) in sorted(self.points.items()):
+                self.cur.execute("""
+                    INSERT INTO table_plane_points (point, distance, angleHz, angleVt)
+                    VALUES (%s, %s, %s, %s)
+                """, (point_id, distance, hz, vt))
+            self.conn.commit()
             return True
-                    
-        except Exception as e:
+        except Exception as exc:
             self.conn.rollback()
-            self.logger.error(
-                f"Database error: {e}"
-            )
+            self.logger.error("Table points insert failed: %s", exc)
             return False
-        
-    def get_connection(self):
-        
-                try:
-        
-                    return psycopg2.connect(
-                        database="laser_tracker_data",
-                        user="dohnaon1",
-                        password="1234",
-                        host="127.0.0.1",
-                        port=5432,
-                    )
-        
-                except Exception as e:
-        
-                    self.get_logger().error(
-                        f"PostgreSQL connection failed: {e}"
-                    )
-        
-                    return None
 
     def close(self):
         self.leika.end_connection()
-
         if self.cur is not None:
             self.cur.close()
-
         if self.conn is not None:
             self.conn.close()
 
+
+# Compatibility with older imports.
+table_plane = TablePlane

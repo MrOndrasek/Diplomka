@@ -9,7 +9,7 @@ import sys
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
 import shutil
-from measurement_system.ros_bridge import RosBridge
+from measurement_system.UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
