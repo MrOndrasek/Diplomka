@@ -4,8 +4,8 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-import psycopg2
 from psycopg2 import sql
+from measurement_system.drivers.db_setup.databaze import get_connection as existing_db_connection
 
 ALLOWED_TABLES = ("measurement_data", "table_plane_points", "robot_base_calibration_points")
 
@@ -23,16 +23,10 @@ def export_table(file_path, table="measurement_data"):
     if suffix not in (".csv", ".h5", ".hdf5"):
         raise ValueError("Use .csv, .h5 or .hdf5")
 
-    kwargs = {
-        "host": os.getenv("PGHOST", "127.0.0.1"),
-        "port": os.getenv("PGPORT", "5432"),
-        "dbname": os.getenv("PGDATABASE", "laser_tracker_data"),
-    }
-    if os.getenv("PGUSER"):
-        kwargs["user"] = os.environ["PGUSER"]
-    # libpq also reads PGPASSWORD or ~/.pgpass automatically
-
-    conn = psycopg2.connect(**kwargs)
+    # Stejné fungující připojení jako db_setup/databaze.py a database_node.
+    conn = existing_db_connection()
+    if conn is False or conn is None:
+        raise ConnectionError("PostgreSQL připojení selhalo (db_setup/databaze.py)")
     try:
         with conn.cursor() as cur:
             cur.execute(sql.SQL("SELECT * FROM {}").format(sql.Identifier(table)))

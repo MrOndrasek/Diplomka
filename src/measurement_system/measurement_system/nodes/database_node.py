@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """ROS2 endpoint for one Leica sample and an atomic PostgreSQL insert."""
-import os
-import psycopg2
 import rclpy
 from rclpy.node import Node
 from measurement_system_interfaces.srv import SaveMeasurement
+from measurement_system.drivers.db_setup.databaze import get_connection as existing_db_connection
 from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
 
@@ -21,16 +20,22 @@ class DatabaseNode(Node):
             self.get_logger().warning("PostgreSQL unavailable; measurement requests will fail")
 
     def get_connection(self):
+        # Stejná konfigurace jako funkční db_setup/databaze.py.
+        # V budoucnu přesunout credentials do ~/.pgpass a sjednotit nastavení.
+        conn = existing_db_connection()
+        if conn is False or conn is None:
+            self.get_logger().error("PostgreSQL connection failed (db_setup/databaze.py)")
+            return None
         try:
-            return psycopg2.connect(
-                dbname=os.getenv("PGDATABASE", "laser_tracker_data"),
-                user=os.getenv("PGUSER", "dohnaon1"),
-                host=os.getenv("PGHOST", "127.0.0.1"),
-                port=os.getenv("PGPORT", "5432"),
-                connect_timeout=5,
-            )
-        except psycopg2.Error as exc:
-            self.get_logger().error(f"PostgreSQL connection failed: {exc}")
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            conn.rollback()  # ukončení transakce pouze pro health-check
+            self.get_logger().info("PostgreSQL SELECT 1 OK")
+            return conn
+        except Exception as exc:
+            self.get_logger().error(f"PostgreSQL health-check failed: {exc}")
+            conn.close()
             return None
 
     def read_tracker(self, joints):

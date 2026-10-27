@@ -234,15 +234,16 @@ class MainWindow(QMainWindow):
         existing = self._processes.get(key)
         if existing is not None and existing.state() != QProcess.NotRunning:
             return
-        if key == "leica":
-            command = [sys.executable, "-m", "measurement_system.leica_monitor"]
-        else:
-            exe = shutil.which("ros2")
-            if not exe:
-                QMessageBox.warning(self, "ROS2", "Příkaz ros2 není v PATH. Spusť UI ze sourcovaného ROS2 prostředí.")
-                return
-            names = {"robot": "robot_node", "database": "database_node", "controller": "controller_node", "calibration": "robot_calibration_node"}
-            command = [exe, "run", "measurement_system", names[key]]
+        # Spouštíme přímo Python proces ROS2 uzlu, nikoliv obalující `ros2 run`.
+        # QProcess pak při terminate() ukončuje skutečný uzel, ne jen CLI rodiče.
+        names = {
+            "robot": "measurement_system.nodes.robot_node",
+            "database": "measurement_system.nodes.database_node",
+            "controller": "measurement_system.nodes.controller_node",
+            "calibration": "measurement_system.nodes.robot_calibration_node",
+            "leica": "measurement_system.leica_monitor",
+        }
+        command = [sys.executable, "-m", names[key]]
         process = QProcess(self)
         process.setProgram(command[0])
         process.setArguments(command[1:])

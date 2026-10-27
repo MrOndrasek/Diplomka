@@ -8,11 +8,11 @@ import time
 import uuid
 from enum import Enum, auto
 
-import psycopg2
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from measurement_system_interfaces.srv import MoveRobot, StartMeasurement, StopMeasurement
+from measurement_system.drivers.db_setup.databaze import get_connection as existing_db_connection
 from measurement_system.measurement.position_importer import load_positions
 from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
@@ -74,14 +74,9 @@ class RobotCalibrationNode(Node):
                 raise ValueError('Pro kalibraci báze použij alespoň 3 různé polohy, doporučeno 6–10+')
             if not self.client.service_is_ready():
                 raise RuntimeError('Služba /move_robot není dostupná')
-            # Explicitly configured DB connection through environment/.pgpass.
-            conn = psycopg2.connect(
-                dbname=os.getenv('PGDATABASE', 'laser_tracker_data'),
-                user=os.getenv('PGUSER', 'dohnaon1'),
-                host=os.getenv('PGHOST', '127.0.0.1'),
-                port=os.getenv('PGPORT', '5432'),
-                connect_timeout=5,
-            )
+            conn = existing_db_connection()
+            if conn is False or conn is None:
+                raise ConnectionError("PostgreSQL unavailable (db_setup/databaze.py)")
             with conn.cursor() as cur:
                 cur.execute('''CREATE TABLE IF NOT EXISTS robot_base_calibration_points (
                     calibration_id UUID NOT NULL,
