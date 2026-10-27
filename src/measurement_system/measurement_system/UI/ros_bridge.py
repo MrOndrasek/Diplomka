@@ -14,6 +14,9 @@ class RosBridge(QObject):
     stop_result = Signal(bool, str)
     measurement_status = Signal(object)
     modules_status = Signal(object)
+    calibration_result = Signal(bool, str)
+    calibration_stop_result = Signal(bool, str)
+    calibration_status = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -24,6 +27,11 @@ class RosBridge(QObject):
         self.client = self.node.create_client(StartMeasurement, "start_measurement")
         self.stop_client = self.node.create_client(StopMeasurement, "/stop_measurement")
         self._stop_future = None
+        self._calib_start_future = None
+        self._calib_stop_future = None
+        self._calib_start_client = self.node.create_client(StartMeasurement, '/start_robot_calibration')
+        self._calib_stop_client = self.node.create_client(StopMeasurement, '/stop_robot_calibration')
+        self.node.create_subscription(String, '/robot_calibration/status', self._on_calibration_status, 10)
         self._robot_client = self.node.create_client(MoveRobot, "/move_robot")
         self._database_client = self.node.create_client(SaveMeasurement, "/save_measurement")
         self._leica_recent = False
@@ -40,6 +48,12 @@ class RosBridge(QObject):
         self._status_timer.start(1000)
         self._check_service()
 
+    def _on_calibration_status(self, message):
+        try:
+            self.calibration_status.emit(json.loads(message.data))
+        except ValueError:
+            pass
+
     def _on_leica_health(self, message):
         self._leica_recent = bool(message.data)
 
@@ -49,6 +63,7 @@ class RosBridge(QObject):
             "database": self._database_client.service_is_ready(),
             "controller": self.client.service_is_ready(),
             "leica": self._leica_recent,
+            "calibration": self._calib_start_client.service_is_ready(),
         })
 
     def _on_status_message(self, message):
@@ -94,6 +109,19 @@ class RosBridge(QObject):
             except Exception as exc:
                 self.stop_result.emit(False, str(exc))
 
+        for attr, signal in (
+            ('_calib_start_future', self.calibration_result),
+            ('_calib_stop_future', self.calibration_stop_result),
+        ):
+            future = getattr(self, attr)
+            if future is not None and future.done():
+                setattr(self, attr, None)
+                try:
+                    reply = future.result()
+                    signal.emit(bool(reply.success), str(reply.message))
+                except Exception as exc:
+                    signal.emit(False, str(exc))
+
     def _check_service(self):
         self.service_available.emit(self.client.service_is_ready())
         self.check_modules()
@@ -113,6 +141,22 @@ class RosBridge(QObject):
         if not self.stop_client.service_is_ready():
             raise RuntimeError("Služba /stop_measurement není dostupná")
         self._stop_future = self.stop_client.call_async(StopMeasurement.Request())
+
+    def start_robot_calibration(self, csv_path):
+        if self._calib_start_future is not None:
+            raise RuntimeError('Čeká se na odpověď předchozí kalibrace')
+        if not self._calib_start_client.service_is_ready():
+            raise RuntimeError('Není dostupná služba /start_robot_calibration')
+        req = StartMeasurement.Request()
+        req.csv_path = str(csv_path)
+        self._calib_start_future = self._calib_start_client.call_async(req)
+
+    def stop_robot_calibration(self):
+        if self._calib_stop_future is not None:
+            raise RuntimeError('Čeká se na potvrzení zastavení kalibrace')
+        if not self._calib_stop_client.service_is_ready():
+            raise RuntimeError('Není dostupná služba /stop_robot_calibration')
+        self._calib_stop_future = self._calib_stop_client.call_async(StopMeasurement.Request())
 
     def close(self):
         self._spin_timer.stop()

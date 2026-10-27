@@ -7,7 +7,7 @@ from pathlib import Path
 import psycopg2
 from psycopg2 import sql
 
-ALLOWED_TABLES = ("measurement_data", "table_plane_points")
+ALLOWED_TABLES = ("measurement_data", "table_plane_points", "robot_base_calibration_points")
 
 
 def export_table(file_path, table="measurement_data"):

@@ -9,7 +9,7 @@ import sys
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
 import shutil
-from measurement_system.UI.ros_bridge import RosBridge
+from measurement_system.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -73,6 +73,9 @@ class MainWindow(QMainWindow):
         self.ros.stop_result.connect(self._on_stop_result)
         self.ros.measurement_status.connect(self._on_measurement_status)
         self.ros.modules_status.connect(self._on_modules_status)
+        self.ros.calibration_result.connect(self._on_calibration_result)
+        self.ros.calibration_stop_result.connect(self._on_calibration_stop_result)
+        self.ros.calibration_status.connect(self._on_calibration_status)
         self._module_timer = QTimer(self)
         self._module_timer.timeout.connect(self._refresh_modules)
         self._module_timer.start(1000)
@@ -153,6 +156,7 @@ class MainWindow(QMainWindow):
             ("leica", "Leica Tracker", "ZMQ stream / monitor"),
             ("database", "PostgreSQL", "database_node / save_measurement"),
             ("controller", "Measurement Controller", "start_measurement"),
+            ("calibration", "Kalibrace báze", "robot_calibration_node"),
         ]
         for i, (key, title, detail) in enumerate(modules):
             box = QGroupBox(title)
@@ -189,7 +193,7 @@ class MainWindow(QMainWindow):
             if not exe:
                 QMessageBox.warning(self, "ROS2", "Příkaz ros2 není v PATH. Spusť UI ze sourcovaného ROS2 prostředí.")
                 return
-            names = {"robot": "robot_node", "database": "database_node", "controller": "controller_node"}
+            names = {"robot": "robot_node", "database": "database_node", "controller": "controller_node", "calibration": "robot_calibration_node"}
             command = [exe, "run", "measurement_system", names[key]]
         process = QProcess(self)
         process.setProgram(command[0])
@@ -248,13 +252,21 @@ class MainWindow(QMainWindow):
         btn.setEnabled(False)
         lay.addWidget(group("1. Souřadnicový systém stolu – 3 body", table, btn,
                             explanation("P1 = počátek, P1→P2 = osa X, P3 určuje stranu osy Y.")))
-        base_btn = QPushButton("Spustit kalibraci báze (zatím nedostupné)")
-        base_btn.setEnabled(False)
-        lay.addWidget(group("2. Kalibrace báze – metoda B", explanation(
-            "Porovnáme polohy reflektoru z dopředné kinematiky se souřadnicemi Leica v několika konfiguracích. "
-            "Je nutné zohlednit offset reflektoru vůči přírubě/TCP."), base_btn))
-        lay.addWidget(group("3. Výsledné transformace", explanation(
-            "T_leica_table: neznámá     |     T_leica_robot: neznámá     |     T_robot_table: neznámá")))
+        self.calib_info = QLabel('Nezahájeno – nejprve připoj kalibrační uzel a importuj CSV s q1–q7.')
+        self.calib_info.setWordWrap(True)
+        self.calib_progress = QProgressBar()
+        self.calib_progress.setRange(0, 1)
+        self.calib_progress.setValue(0)
+        calib_start = QPushButton('Spustit kalibraci báze z importovaného CSV')
+        calib_start.clicked.connect(self._start_robot_calibration)
+        calib_stop = QPushButton('Zastavit kalibraci po aktuálním kroku')
+        calib_stop.clicked.connect(self._stop_robot_calibration)
+        lay.addWidget(group('2. Kalibrace báze – metoda B',
+            explanation('Robot projede importované kloubové konfigurace. U každé uložíme příkazové úhly a surové měření Leica do samostatné tabulky. Výpočet transformace proběhne offline.'),
+            self.calib_info, self.calib_progress, calib_start, calib_stop))
+        lay.addWidget(group('3. Offline zpracování', explanation(
+            'Výstup: tabulka robot_base_calibration_points; každá série má calibration_id. '
+            'Záznamy obsahují požadované, nikoliv nezávisle změřené kloubové úhly.' )))
         lay.addStretch()
         return page
 
@@ -434,6 +446,47 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "STOP odmítnut", message)
         self._update_stop_button()
 
+    def _start_robot_calibration(self):
+        if not self.source_path or not self.rows:
+            QMessageBox.warning(self, 'Kalibrace', 'Nejdřív importuj CSV s kloubovými pozicemi q1–q7.')
+            return
+        if self.headers != JOINT_COLUMNS:
+            QMessageBox.warning(self, 'Kalibrace', 'Kalibrace vyžaduje CSV point_id,q1,...,q7.')
+            return
+        answer = QMessageBox.question(self, 'Kalibrace báze',
+            f'Spustit kalibrační pohyby do {len(self.rows)} pozic? Robot se začne pohybovat. '
+            'Zkontroluj limity, trajektorii a bezpečnost pracoviště.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self.ros.start_robot_calibration(self.source_path)
+            self.calib_info.setText('Odesílám požadavek na kalibraci…')
+        except Exception as exc:
+            QMessageBox.warning(self, 'Kalibrace', str(exc))
+
+    def _stop_robot_calibration(self):
+        try:
+            self.ros.stop_robot_calibration()
+            self.calib_info.setText('Požaduji zastavení kalibrace…')
+        except Exception as exc:
+            QMessageBox.warning(self, 'Zastavení kalibrace', str(exc))
+
+    def _on_calibration_result(self, success, message):
+        self.calib_info.setText(('Kalibrace přijata: ' if success else 'Kalibrace odmítnuta: ') + message)
+
+    def _on_calibration_stop_result(self, success, message):
+        self.calib_info.setText(('STOP přijat: ' if success else 'STOP odmítnut: ') + message)
+
+    def _on_calibration_status(self, data):
+        state = str(data.get('state', '?'))
+        done = int(data.get('completed', 0))
+        total = int(data.get('total', 0))
+        self.calib_progress.setRange(0, max(total, 1))
+        self.calib_progress.setValue(min(done, max(total, 1)))
+        self.calib_info.setText(f'{state} – {done}/{total} – {data.get("message", "")} '
+                                f' (série {data.get("calibration_id", "")})')
+
     def _start_measurement(self):
         if not self.start_button.isEnabled():
             return
@@ -509,7 +562,7 @@ class MainWindow(QMainWindow):
     def _export(self):
         page, lay = self._page("Export surových záznamů z PostgreSQL; výpočty citlivosti zůstávají mimo aplikaci.")
         self.export_table_select = QComboBox()
-        self.export_table_select.addItems(["measurement_data", "table_plane_points"])
+        self.export_table_select.addItems(["measurement_data", "table_plane_points", "robot_base_calibration_points"])
         lay.addWidget(group("Databázová tabulka", self.export_table_select))
         buttons = QHBoxLayout()
         self.btn_csv = QPushButton("Export do CSV")

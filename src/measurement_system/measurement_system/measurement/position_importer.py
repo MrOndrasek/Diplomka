@@ -1,57 +1,30 @@
+"""Validate and load joint targets [q1..q7], degrees, from CSV."""
 import csv
 import math
 
+
 def load_positions(file_path):
-    positions=[]
-    point_ids=[]
-
-    joint_names = [f"q{i}" for i in range(1,8)]
-
-    with open(file_path,"r",encoding="utf-8-sig",newline="") as file:
-        reader=csv.DictReader(file)
-
-        if reader.fieldnames is None:
-            raise ValueError("CSV soubor je prázdný")
-
-        required= ["point_id"] + joint_names
-        missing = [
-            name for name in required
-            if name not in reader.fieldnames
-        ]
-
-        if missing:
-            raise ValueError(
-                f'chybejici sloupce: {missing}'
-            )
-
-        for row_number, row in enumerate(reader, start=2):
-            try:
-                point_id=row["point_id"].strip()
-
-                if not point_id:
-                    raise ValueError("Prázdné point_id")
-
-                if point_id in point_ids:
-                    raise ValueError(
-                        f'Duplicitní point_id:{point_id}'
-                    )
-
-                joints=[
-                    float(row[name])
-                    for name in joint_names
-                ]
-
-                if not all(math.isfinite(q) for q in joints):
-                    raise ValueError("Neplatná hodnota úhlu")
-
-                point_ids.append(point_id)
-                positions.append(joints)
-
-            except(ValueError,TypeError,KeyError) as e:
-                raise ValueError(
-                    f'Chyba na řádku {row_number}:{e}'
-                ) from e
-
+    with open(file_path, encoding='utf-8-sig', newline='') as handle:
+        sample = handle.read(4096)
+        handle.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+            reader = csv.DictReader(handle, dialect=dialect)
+        except csv.Error:
+            reader = csv.DictReader(handle)
+        required = ['point_id'] + [f'q{i}' for i in range(1, 8)]
+        if not reader.fieldnames or any(name not in reader.fieldnames for name in required):
+            raise ValueError('CSV must contain ' + ','.join(required))
+        positions, ids = [], []
+        for lineno, row in enumerate(reader, 2):
+            point_id = str(row['point_id']).strip()
+            if not point_id or point_id in ids:
+                raise ValueError(f'Invalid or duplicate point_id on line {lineno}')
+            angles = [float(row[name]) for name in required[1:]]
+            if not all(math.isfinite(angle) for angle in angles):
+                raise ValueError(f'Nonfinite joint angle on line {lineno}')
+            ids.append(point_id)
+            positions.append(angles)
         if not positions:
-            raise ValueError("CSV neobsahuje žádné pozice")
-        return positions,point_ids
+            raise ValueError('No target rows')
+        return positions, ids
