@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from measurement_system_interfaces.srv import SaveMeasurement
 from measurement_system.drivers.db_setup.databaze import get_connection as existing_db_connection
+from measurement_system.drivers.db_setup.schema import ensure_measurement_tables
 from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
 
@@ -43,6 +44,7 @@ class DatabaseNode(Node):
         """Acquire one new sample and commit it before returning success."""
         if self.conn is None or self.conn.closed:
             raise RuntimeError("Database is disconnected")
+        ensure_measurement_tables(self.conn)
         self.get_logger().info("Waiting for fresh Leica ZMQ measurement")
         timestamp, distance, angle_hz, angle_vt = self.leika.measure_point()
         self.get_logger().info(f"Leica sample received: timestamp={timestamp}, distance={distance}")
@@ -63,8 +65,18 @@ class DatabaseNode(Node):
 
     def callback_save_measurement(self, request, response):
         if not request.save:
-            response.success = True
-            response.message = "Measurement skipped"
+            # Controller preflight: prepare schema BEFORE any robot movement.
+            try:
+                if self.conn is None or self.conn.closed:
+                    raise RuntimeError("Database is disconnected")
+                ensure_measurement_tables(self.conn)
+                response.success = True
+                response.message = "PostgreSQL measurement tables ready"
+                self.get_logger().info(response.message)
+            except Exception as exc:
+                response.success = False
+                response.message = f"PostgreSQL schema initialization failed: {exc}"
+                self.get_logger().error(response.message)
             return response
         if len(request.joints) != 7:
             response.success = False

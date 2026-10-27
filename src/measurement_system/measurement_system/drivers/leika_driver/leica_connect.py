@@ -1,6 +1,16 @@
 import pysoem
 import time
 import zmq
+import signal
+import sys
+
+
+class StopPublisher(Exception):
+    pass
+
+
+def _stop_handler(signum, frame):
+    raise StopPublisher()
 
 
 class Connection:
@@ -10,15 +20,14 @@ class Connection:
 
         self.ctx = zmq.Context() 
         self.sock = self.ctx.socket(zmq.PUB)
-        self.sock.bind("tcp://127.0.0.1:5555")
+        self.sock.bind("tcp://*:5555")
 
     def run(self):
-        self._master.open(self.port)
-        self._master.config_init()
-        if len(self._master.slaves) == 0:
-            print("No slaves found")
-        elif len(self._master.slaves) > 0:
+        try:
+            self._master.open(self.port)
             self._master.config_init()
+            if not self._master.slaves:
+                raise RuntimeError(f"No EtherCAT slaves found on {self.port}")
             self._master.config_map()
 
             self._master.send_processdata()
@@ -41,16 +50,20 @@ class Connection:
                         data
                     ])
                     time.sleep(2)
-            except KeyboardInterrupt:
-                print("ended")
-            finally:
-                self._master.close()
-                self.sock.close()
-                self.ctx.term()
+            except (KeyboardInterrupt, StopPublisher):
+                print("Leica publisher stopped", flush=True)
+        finally:
+            self._master.close()
+            self.sock.close()
+            self.ctx.term()
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _stop_handler)
     try:
         Connection("eno4").run()
+    except (KeyboardInterrupt, StopPublisher):
+        pass
     except Exception as e:
-        print(f"Leica error: {e}")
+        print(f"Leica error: {e}", file=sys.stderr, flush=True)
+        sys.exit(1)

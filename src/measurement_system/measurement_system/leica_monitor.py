@@ -4,6 +4,7 @@ import zmq
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
+from rclpy.executors import ExternalShutdownException
 
 
 class LeicaMonitor(Node):
@@ -27,7 +28,7 @@ class LeicaMonitor(Node):
             except zmq.Again:
                 break
         message = Bool()
-        message.data = time.monotonic() - self.last_sample < 2.0
+        message.data = time.monotonic() - self.last_sample < 5.0
         self.publisher.publish(message)
 
     def destroy_node(self):
@@ -35,15 +36,20 @@ class LeicaMonitor(Node):
         return super().destroy_node()
 
 
-def main():
-    rclpy.init()
+
+def main(args=None):
+    rclpy.init(args=args)
     node = LeicaMonitor()
+
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+
     finally:
         node.destroy_node()
+
         if rclpy.ok():
             rclpy.shutdown()
 

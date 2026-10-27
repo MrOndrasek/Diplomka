@@ -4,6 +4,8 @@ StartMeasurement may command robot motion through the ROS2 controller.
 The user must explicitly arm the start button.
 """
 import csv
+import os
+import shutil
 from pathlib import Path
 import sys
 
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
         self._module_timer.timeout.connect(self._refresh_modules)
         self._module_timer.start(1000)
         self._processes = {}
+        self._leica_publisher = None
+        self._leica_stopping = False
         self._module_terminating = set()
         self._latest_sequence_state = "IDLE"
         self._refresh_modules()
@@ -175,9 +179,9 @@ class MainWindow(QMainWindow):
             grid.addWidget(box, i // 2, i % 2)
         lay.addLayout(grid)
         lay.addWidget(explanation(
-            "Leica: Při kliknutí spustíme monitor ZMQ na tcp://localhost:5555. "
-            "Pro skutečné spuštění publikačního driveru musí běžet leica-driver "
-            "samostatně nebo být nakonfigurován systémově."
+            "Leica: Připojit spouští EtherCAT publisher leica_connect.py (eno4) "
+            "a zároveň ROS2 monitor ZMQ. Stav Připojeno vyžaduje skutečný příjem dat. "
+            "Pro EtherCAT mohou být potřeba administrátorská oprávnění (pkexec)."
         ))
         self.total_label = QLabel("Importované pozice: 0")
         lay.addWidget(group("Aktuální série", self.total_label))
@@ -191,14 +195,18 @@ class MainWindow(QMainWindow):
 
     def _toggle_module(self, key):
         process = self._processes.get(key)
-        if process is not None and process.state() != QProcess.NotRunning:
+        publisher = self._leica_publisher if key == "leica" else None
+        if ((process is not None and process.state() != QProcess.NotRunning)
+                or (publisher is not None and publisher.state() != QProcess.NotRunning)):
             self._disconnect_module(key)
         else:
             self._connect_module(key)
 
     def _disconnect_module(self, key):
         process = self._processes.get(key)
-        if process is None or process.state() == QProcess.NotRunning:
+        publisher = self._leica_publisher if key == "leica" else None
+        if ((process is None or process.state() == QProcess.NotRunning)
+                and (publisher is None or publisher.state() == QProcess.NotRunning)):
             QMessageBox.information(
                 self, "Externě spuštěný uzel",
                 "Tento uzel nebyl spuštěn z UI. Nelze jej bezpečně ukončit tímto tlačítkem."
@@ -219,11 +227,20 @@ class MainWindow(QMainWindow):
         self._module_terminating.add(key)
         self.module_labels[key].setText("Ukončuji…")
         self.module_buttons[key].setEnabled(False)
-        process.terminate()  # asynchronous, not blocking Qt event loop
-        QTimer.singleShot(3000, lambda k=key, p=process: self._check_terminated(k, p))
+        if key == "leica":
+            self._leica_stopping = True
+            publisher = self._leica_publisher
+            if publisher is not None and publisher.state() != QProcess.NotRunning:
+                publisher.terminate()
+                QTimer.singleShot(3000, lambda p=publisher: self._check_terminated("leica publisher", p))
+        if process is not None and process.state() != QProcess.NotRunning:
+            process.terminate()  # asynchronous, not blocking Qt event loop
+            QTimer.singleShot(3000, lambda k=key, p=process: self._check_terminated(k, p))
+        else:
+            self._module_terminating.discard(key)
 
     def _check_terminated(self, key, process):
-        if process.state() != QProcess.NotRunning and key in self._module_terminating:
+        if process.state() != QProcess.NotRunning and (key in self._module_terminating or key == "leica publisher") :
             self.module_labels[key].setText("Ukončení trvá dlouho – zkontroluj uzel v terminálu")
             self.statusBar().showMessage(
                 f"{key} stále běží; automatické SIGKILL je zakázáno kvůli stavu robota.", 10000
@@ -231,6 +248,9 @@ class MainWindow(QMainWindow):
             self.module_buttons[key].setEnabled(True)
 
     def _connect_module(self, key):
+        if key == "leica":
+            self._connect_leica()
+            return
         existing = self._processes.get(key)
         if existing is not None and existing.state() != QProcess.NotRunning:
             return
@@ -256,10 +276,106 @@ class MainWindow(QMainWindow):
         self.module_buttons[key].setEnabled(False)
         process.start()
 
+    def _connect_leica(self):
+        """Start actual EtherCAT/ZMQ publisher, then ROS2 health monitor."""
+        existing = self._leica_publisher
+        if existing is not None and existing.state() != QProcess.NotRunning:
+            return
+        monitor = self._processes.get("leica")
+        if monitor is not None and monitor.state() != QProcess.NotRunning:
+            # Do not start another EtherCAT master if the monitor is already running.
+            self.module_labels["leica"].setText("Monitor už běží; odpoj jej a zkus znovu")
+            return
+        self._leica_stopping = False
+        # Default uses PolicyKit authentication in a graphical session. Override
+        # with LEICA_LAUNCH_MODE=direct only when pysoem has OS permission already.
+        mode = os.environ.get("LEICA_LAUNCH_MODE", "pkexec").lower()
+        if mode == "direct":
+            command = [sys.executable, "-m", "measurement_system.drivers.leika_driver.leica_connect"]
+        elif mode == "pkexec":
+            PROJECT_ROOT = Path("/home/dohnal/diplomka_ros")
+
+            LEICA_SCRIPT = (
+                PROJECT_ROOT
+                / "src"
+                / "measurement_system"
+                / "measurement_system"
+                / "drivers"
+                / "leika_driver"
+                / "leica_connect.py"
+            )
+
+            command = [
+                "pkexec",
+                "/usr/bin/python3",
+                str(LEICA_SCRIPT)
+            ]
+        else:
+            self.module_labels["leica"].setText("Neznámý LEICA_LAUNCH_MODE")
+            return
+        if shutil.which(command[0]) is None and not os.path.exists(command[0]):
+            self.module_labels["leica"].setText(f"Chybí spouštěč: {command[0]}")
+            return
+        publisher = QProcess(self)
+        publisher.setProgram(command[0])
+        publisher.setArguments(command[1:])
+        publisher.setProcessChannelMode(QProcess.MergedChannels)
+        publisher.readyReadStandardOutput.connect(lambda p=publisher: self._process_output("leica publisher", p))
+        publisher.errorOccurred.connect(lambda err, p=publisher: self._leica_publisher_error(p))
+        publisher.finished.connect(lambda code, status, p=publisher: self._leica_publisher_finished(p, code))
+        self._leica_publisher = publisher
+        self.module_labels["leica"].setText("Spouštím EtherCAT publisher…")
+        self.module_buttons["leica"].setEnabled(False)
+        publisher.start()
+        # The monitor subscribes immediately, reports ready only after actual data.
+        QTimer.singleShot(700, lambda p=publisher: self._start_leica_monitor_if_alive(p))
+
+    def _start_leica_monitor_if_alive(self, publisher):
+        if publisher is not self._leica_publisher or publisher.state() == QProcess.NotRunning:
+            return
+        if self._leica_stopping:
+            return
+        self._connect_monitor()
+
+    def _connect_monitor(self):
+        process = QProcess(self)
+        process.setProgram(sys.executable)
+        process.setArguments(["-m", "measurement_system.leica_monitor"])
+        process.setProcessChannelMode(QProcess.MergedChannels)
+        process.readyReadStandardOutput.connect(lambda p=process: self._process_output("leica monitor", p))
+        process.errorOccurred.connect(lambda err, p=process: self._process_error("leica", p))
+        process.finished.connect(lambda code, status: self._process_finished("leica", code))
+        self._processes["leica"] = process
+        process.start()
+
+    def _leica_publisher_error(self, publisher):
+        if publisher is self._leica_publisher:
+            self.module_labels["leica"].setText(f"Leica publisher: {publisher.errorString()}")
+            self.module_buttons["leica"].setEnabled(True)
+
+    def _leica_publisher_finished(self, publisher, code):
+        if publisher is not self._leica_publisher:
+            return
+        monitor = self._processes.get("leica")
+        if monitor is not None and monitor.state() != QProcess.NotRunning:
+            monitor.terminate()
+        if not self._leica_stopping:
+            self.module_labels["leica"].setText(f"Leica publisher skončil (kód {code}); zkontroluj pkexec/eno4")
+            self.statusBar().showMessage("Leica publisher se ukončil. Ověř oprávnění EtherCAT a výpis procesu.", 10000)
+        self._leica_stopping = False
+        self._module_terminating.discard("leica")
+
     def _process_output(self, key, process):
-        message = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
-        if message and ("ERROR" in message or "Traceback" in message):
-            self.statusBar().showMessage(f"{key}: {message[-200:]}", 10000)
+        message = bytes(
+            process.readAllStandardOutput()
+        ).decode("utf-8", errors="replace").strip()
+
+        if message:
+            print(f"[{key}] {message}", flush=True)
+            self.statusBar().showMessage(
+                f"{key}: {message[-200:]}",
+                10000
+            )
 
     def _process_error(self, key, process):
         self.module_labels[key].setText(f"Chyba spuštění: {process.errorString()}")
@@ -280,8 +396,13 @@ class MainWindow(QMainWindow):
                 continue
             process = self._processes.get(key)
             alive = process is not None and process.state() != QProcess.NotRunning
+            if key == "leica":
+                publisher = self._leica_publisher
+                pub_alive = publisher is not None and publisher.state() != QProcess.NotRunning
+                alive = alive or pub_alive
+                ready = bool(ready and pub_alive)
             if ready:
-                text = "Přijímá data ZMQ" if key == "leica" else "ROS2 služba dostupná (hardware neověřen)"
+                text = "Leica: publisher běží, ZMQ přijímá data" if key == "leica" else "ROS2 služba dostupná (hardware neověřen)"
             elif alive:
                 text = "Proces běží, čekám na službu/data"
             else:
@@ -613,6 +734,14 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._module_timer.stop()
+        if self._leica_publisher is not None and self._leica_publisher.state() != QProcess.NotRunning:
+            self._leica_stopping = True
+            self._leica_publisher.terminate()
+            self._leica_publisher.waitForFinished(1500)
+            if self._leica_publisher.state() != QProcess.NotRunning:
+                QMessageBox.warning(self, "Leica stále běží", "Publisher se nepodařilo ukončit. Zkontroluj jej v terminálu.")
+                event.ignore()
+                return
         for process in getattr(self, "_processes", {}).values():
             if process.state() != QProcess.NotRunning:
                 process.terminate()

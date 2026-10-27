@@ -11,6 +11,8 @@ from measurement_system.measurement_status import MeasurementStatusPublisher
 
 class State(Enum):
     IDLE = auto()
+    INITIALIZING_DB = auto()
+    WAIT_DB_READY = auto()
     MOVING = auto()
     WAIT_MOVE = auto()
     SETTLING = auto()
@@ -65,8 +67,8 @@ class MeasurementController(Node):
             self.stop_requested = False
             self.future = None
             self.wait_since = None
-            self.state = State.MOVING
-            self.publish("Sequence accepted")
+            self.state = State.INITIALIZING_DB
+            self.publish("Sequence accepted; preparing PostgreSQL tables")
             response.success = True
             response.message = f"Sequence accepted: {len(positions)} targets"
         except Exception as exc:
@@ -104,7 +106,33 @@ class MeasurementController(Node):
             self.finish(State.STOPPED, "Stopped before next operation")
             return
         try:
-            if self.state == State.MOVING:
+            if self.state == State.INITIALIZING_DB:
+                if not self.measurement_client.service_is_ready():
+                    raise RuntimeError("Database measurement service unavailable")
+                request = SaveMeasurement.Request()
+                request.save = False  # non-measuring preflight, initializes schema
+                request.joints = []
+                self.future = self.measurement_client.call_async(request)
+                self.wait_since = time.monotonic()
+                self.state = State.WAIT_DB_READY
+                self.publish("Preparing PostgreSQL tables")
+
+            elif self.state == State.WAIT_DB_READY:
+                if not self.future.done():
+                    self.check_timeout("Database initialization")
+                    return
+                reply = self.future.result()
+                if reply is None or not reply.success:
+                    raise RuntimeError("Database initialization failed: " + (reply.message if reply else "no response"))
+                self.get_logger().info(f"Database preflight OK: {reply.message}")
+                if self.stop_requested:
+                    self.finish(State.STOPPED, "Stopped before robot movement")
+                else:
+                    self.future = None
+                    self.state = State.MOVING
+                    self.publish("Database ready; next target")
+
+            elif self.state == State.MOVING:
                 if not self.robot_client.service_is_ready():
                     raise RuntimeError("Robot service unavailable")
                 request = MoveRobot.Request()
