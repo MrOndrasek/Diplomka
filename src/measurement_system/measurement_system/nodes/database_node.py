@@ -13,6 +13,7 @@ class DatabaseNode(Node):
         self.conn = self.get_connection()
         self.leika = Leika_ZMQ_driver()
         self.leika.connection()
+        self.get_logger().info("Leica subscriber initialized on tcp://127.0.0.1:5555")
         self.save_service_ = self.create_service(
             SaveMeasurement, "/save_measurement", self.callback_save_measurement
         )
@@ -42,7 +43,9 @@ class DatabaseNode(Node):
         """Acquire one new sample and commit it before returning success."""
         if self.conn is None or self.conn.closed:
             raise RuntimeError("Database is disconnected")
+        self.get_logger().info("Waiting for fresh Leica ZMQ measurement")
         timestamp, distance, angle_hz, angle_vt = self.leika.measure_point()
+        self.get_logger().info(f"Leica sample received: timestamp={timestamp}, distance={distance}")
         try:
             with self.conn.cursor() as cur:
                 cur.execute("""
@@ -52,6 +55,7 @@ class DatabaseNode(Node):
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (distance, angle_hz, angle_vt, timestamp, *joints))
             self.conn.commit()
+            self.get_logger().info("Leica measurement committed to PostgreSQL")
             return True
         except Exception:
             self.conn.rollback()
@@ -73,7 +77,7 @@ class DatabaseNode(Node):
         except Exception as exc:
             response.success = False
             response.message = str(exc)
-            self.get_logger().error(f"Measurement failed: {exc}")
+            self.get_logger().error(f"Measurement failed ({type(exc).__name__}): {exc}")
         return response
 
     def destroy_node(self):
