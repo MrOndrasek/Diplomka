@@ -21,7 +21,8 @@ class Leika_ZMQ_driver():
 
         self.sock.setsockopt(zmq.SUBSCRIBE,b"")
         self.sock.setsockopt(zmq.LINGER, 0)
-        self.sock.connect("tcp://localhost:5555")
+        self.sock.setsockopt(zmq.RCVTIMEO, 5000)
+        self.sock.connect("tcp://127.0.0.1:5555")
 
 
     def end_connection(self):
@@ -84,6 +85,7 @@ class Leika_ZMQ_driver():
                     "<d", data, 4
                 )[0]
 
+                
             return (timestamp,
                     value_distance,
                     value_angle_hz,
@@ -92,4 +94,4 @@ class Leika_ZMQ_driver():
         except (struct.error, ValueError) as e:
             self.logger.error(f"Leica read error:{e}")
             raise
-             
+

@@ -10,7 +10,7 @@ class Connection:
 
         self.ctx = zmq.Context() 
         self.sock = self.ctx.socket(zmq.PUB)
-        self.sock.bind("tcp://*:5555")
+        self.sock.bind("tcp://127.0.0.1:5555")
 
     def run(self):
         self._master.open(self.port)
