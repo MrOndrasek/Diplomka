@@ -54,42 +54,76 @@ class Leika_ZMQ_driver():
             )
     
     def measure_point(self):
-        if self.sock is None:
-            raise RuntimeError("Leica is not connected")
-        
-        self.clear_queue()
 
-        if not self.sock.poll(5000, zmq.POLLIN):
-             raise TimeoutError("Leica measurement timeout")
+            if self.sock is None:
+                raise RuntimeError("Leica is not connected")
 
-        try:
-            timestamp_data, data=self.sock.recv_multipart()
+            self.logger.warning("Leica: clearing queue")
+
+            self.clear_queue()
+
+            self.logger.warning("Leica: waiting for new measurement")
+
+            start = time.monotonic()
+
+            if not self.sock.poll(5000, zmq.POLLIN):
+                elapsed = time.monotonic() - start
+
+                self.logger.error(
+                    f"Leica timeout after {elapsed:.2f} seconds"
+                )
+
+                raise TimeoutError("Leica measurement timeout")
+
+            self.logger.warning("Leica: new message received")
+
+            parts = self.sock.recv_multipart()
+
+            self.logger.warning(
+                f"Leica packet: {len(parts)} parts, "
+                f"sizes: {[len(p) for p in parts]}"
+            )
+
+            if len(parts) != 2:
+                raise ValueError(
+                    f"Expected 2 Leica packet parts, received {len(parts)}"
+                )
+
+            timestamp_data, data = parts
+
             if len(timestamp_data) != 8 or len(data) < 28:
                 raise ValueError("Invalid Leica packet size")
-                    
+
             timestamp = int.from_bytes(
                 timestamp_data,
                 "little"
             )
-        
-                    # Rozbalení Leica dat
-            value_distance = struct.unpack_from(
-                    "<d", data, 20
-                )[0]
-        
-            value_angle_hz = struct.unpack_from(
-                    "<d", data, 12
-                )[0]
-        
-            value_angle_vt = struct.unpack_from(
-                    "<d", data, 4
-                )[0]
 
-                
-            return (timestamp,
-                    value_distance,
-                    value_angle_hz,
-                    value_angle_vt)
+            value_distance = struct.unpack_from(
+                "<d", data, 20
+            )[0]
+
+            value_angle_hz = struct.unpack_from(
+                "<d", data, 12
+            )[0]
+
+            value_angle_vt = struct.unpack_from(
+                "<d", data, 4
+            )[0]
+
+            self.logger.warning(
+                f"Leica measurement received: "
+                f"distance={value_distance}, "
+                f"angleHz={value_angle_hz}, "
+                f"angleVt={value_angle_vt}"
+            )
+
+            return (
+                timestamp,
+                value_distance,
+                value_angle_hz,
+                value_angle_vt
+            )
         
         except (struct.error, ValueError) as e:
             self.logger.error(f"Leica read error:{e}")
