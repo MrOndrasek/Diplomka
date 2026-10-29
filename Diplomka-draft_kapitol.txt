@@ -1,0 +1,32 @@
+Uvod
+
+Abstrakt
+
+Laser tracker Leika
+	Komunikace pomoci ETHERcat
+
+Robot IIWA Kuka 14
+	Popis robota
+	Dopredna kinematika
+	Inverzni kinematika
+	Porovnani Jacobianu numerického x analytickeho
+
+Merici program
+	Struktura
+	Databaze
+	Programove prostředí
+	Pouzite knihovny
+	Navod k pouziti
+	
+
+Kalibrace robota
+	pomoci TCP 
+
+Mereni
+	Kalibracni prostor
+
+Optimalizace pomoci genetických algoritmu
+
+Kalibrace pomoci neuronove site
+
+Zaver
