@@ -1,0 +1,10 @@
+int64 measurement_id
+int32 point_number
+---
+bool success
+string message
+int64 timestamp
+float64 distance
+float64 angle_hz
+float64 angle_vt
+int64 point_id

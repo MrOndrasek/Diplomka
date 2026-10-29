@@ -8,11 +8,12 @@ import time
 import uuid
 from enum import Enum, auto
 
+from measurement_system.drivers.db_setup.databaze import get_connection
+from measurement_system.drivers.db_setup.schema import ensure_measurement_tables
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from measurement_system_interfaces.srv import MoveRobot, StartMeasurement, StopMeasurement
-from measurement_system.drivers.db_setup.databaze import get_connection as existing_db_connection
+from measurement_system_interfaces.srv import MoveRobot, StartMeasurement, StopMeasurement, GetRobotJoints
 from measurement_system.measurement.position_importer import load_positions
 from measurement_system.drivers.leika_driver.leika_ZMQ_driver import Leika_ZMQ_driver
 
@@ -22,6 +23,8 @@ class State(Enum):
     MOVING = auto()
     WAIT_MOVE = auto()
     SETTLING = auto()
+    READING_JOINTS = auto()
+    WAIT_JOINTS = auto()
     MEASURING = auto()
     FINISHED = auto()
     STOPPED = auto()
@@ -45,6 +48,8 @@ class RobotCalibrationNode(Node):
         self.conn = None
         self.leica = None
         self.client = self.create_client(MoveRobot, '/move_robot')
+        self.joints_client = self.create_client(GetRobotJoints, '/get_robot_joints')
+        self.actual_joints = None
         self.start_srv = self.create_service(StartMeasurement, '/start_robot_calibration', self.on_start)
         self.stop_srv = self.create_service(StopMeasurement, '/stop_robot_calibration', self.on_stop)
         self.publisher = self.create_publisher(String, '/robot_calibration/status', 10)
@@ -74,24 +79,23 @@ class RobotCalibrationNode(Node):
                 raise ValueError('Pro kalibraci báze použij alespoň 3 různé polohy, doporučeno 6–10+')
             if not self.client.service_is_ready():
                 raise RuntimeError('Služba /move_robot není dostupná')
-            conn = existing_db_connection()
+            conn = get_connection()
             if conn is False or conn is None:
-                raise ConnectionError("PostgreSQL unavailable (db_setup/databaze.py)")
+                raise RuntimeError("PostgreSQL connection failed for calibration B")
+            ensure_measurement_tables(conn)
+            calibration_id = uuid.uuid4()
             with conn.cursor() as cur:
-                cur.execute('''CREATE TABLE IF NOT EXISTS robot_base_calibration_points (
-                    calibration_id UUID NOT NULL,
-                    point_id TEXT NOT NULL,
-                    measured_at BIGINT NOT NULL,
-                    distance DOUBLE PRECISION NOT NULL,
-                    angle_hz DOUBLE PRECISION NOT NULL,
-                    angle_vt DOUBLE PRECISION NOT NULL,
-                    q1 DOUBLE PRECISION NOT NULL, q2 DOUBLE PRECISION NOT NULL,
-                    q3 DOUBLE PRECISION NOT NULL, q4 DOUBLE PRECISION NOT NULL,
-                    q5 DOUBLE PRECISION NOT NULL, q6 DOUBLE PRECISION NOT NULL,
-                    q7 DOUBLE PRECISION NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    PRIMARY KEY (calibration_id, point_id)
-                )''')
+                # Calibration uses its own series, independent from automatic measurement.
+                robot_name = (request.robot_name or 'KUKA LBR iiwa 14 R820').strip()
+                series_name = (request.measurement_name or 'Kalibrace B').strip()
+                cur.execute("INSERT INTO robots(robot_name) VALUES (%s) RETURNING id", (robot_name,))
+                robot_id = cur.fetchone()[0]
+                cur.execute("INSERT INTO measurements(robot_id, name) VALUES (%s,%s) RETURNING id",
+                            (robot_id, series_name))
+                measurement_id = cur.fetchone()[0]
+                cur.execute("""INSERT INTO robot_base_calibration_runs
+                           (calibration_id,measurement_id) VALUES (%s,%s)""",
+                            (str(calibration_id), measurement_id))
             conn.commit()
             leica = Leika_ZMQ_driver()
             leica.connection()
@@ -100,7 +104,7 @@ class RobotCalibrationNode(Node):
             self.leica = leica
             self.positions, self.point_ids = positions, ids
             self.index = 0
-            self.run_id = uuid.uuid4()
+            self.run_id = calibration_id
             self.stop_requested = False
             self.message = 'Kalibrace zahájena'
             self.state = State.MOVING
@@ -137,6 +141,15 @@ class RobotCalibrationNode(Node):
             self.leica.end_connection()
             self.leica = None
         if self.conn is not None:
+            try:
+                if self.run_id is not None:
+                    with self.conn.cursor() as cur:
+                        cur.execute("UPDATE robot_base_calibration_runs SET status=%s WHERE calibration_id=%s",
+                                    (state.name, str(self.run_id)))
+                    self.conn.commit()
+            except Exception as exc:
+                self.get_logger().error(f"Calibration status DB update failed: {exc}")
+                self.conn.rollback()
             self.conn.close()
             self.conn = None
 
@@ -171,9 +184,22 @@ class RobotCalibrationNode(Node):
                 self.publish()
             elif self.state == State.SETTLING:
                 if time.monotonic() >= self.settle_until:
-                    self.state = State.MEASURING
-                    self.message = 'Čekám na Leica vzorek'
+                    self.state = State.READING_JOINTS
+                    self.message = 'Načítám skutečné klouby KUKA'
                     self.publish()
+            elif self.state == State.READING_JOINTS:
+                if not self.joints_client.service_is_ready():
+                    raise RuntimeError("GetRobotJoints is unavailable")
+                self.future = self.joints_client.call_async(GetRobotJoints.Request())
+                self.state = State.WAIT_JOINTS
+            elif self.state == State.WAIT_JOINTS:
+                if not self.future.done():
+                    return
+                reply = self.future.result()
+                if reply is None or not reply.success or len(reply.joints) != 7:
+                    raise RuntimeError("Cannot read measured joints for calibration")
+                self.actual_joints = list(reply.joints)
+                self.state = State.MEASURING
             elif self.state == State.MEASURING:
                 # May wait up to 5 s. Dedicated node; no GUI blocking.
                 reading = self.leica.measure_point()
@@ -187,7 +213,7 @@ class RobotCalibrationNode(Node):
                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                       (str(self.run_id), str(self.point_ids[self.index]), int(timestamp),
                        float(distance), float(hz), float(vt),
-                       *[float(q) for q in self.positions[self.index]]))
+                       *[float(q) for q in self.actual_joints]))
                 self.conn.commit()
                 self.index += 1
                 self.publish()

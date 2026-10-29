@@ -1,5 +1,6 @@
 float64[] joints
 bool save
+int64 measurement_id
 ---
 bool success
 string message

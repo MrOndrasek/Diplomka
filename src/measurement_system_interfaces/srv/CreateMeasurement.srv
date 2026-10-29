@@ -1,0 +1,6 @@
+string robot_name
+string measurement_name
+---
+bool success
+string message
+int64 measurement_id

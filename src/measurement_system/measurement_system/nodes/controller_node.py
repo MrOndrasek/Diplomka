@@ -4,7 +4,7 @@ import time
 from enum import Enum, auto
 import rclpy
 from rclpy.node import Node
-from measurement_system_interfaces.srv import MoveRobot, SaveMeasurement, StartMeasurement, StopMeasurement
+from measurement_system_interfaces.srv import MoveRobot, SaveMeasurement, StartMeasurement, StopMeasurement, GetRobotJoints, CreateMeasurement
 from measurement_system.measurement.position_importer import load_positions
 from measurement_system.measurement_status import MeasurementStatusPublisher
 
@@ -13,9 +13,12 @@ class State(Enum):
     IDLE = auto()
     INITIALIZING_DB = auto()
     WAIT_DB_READY = auto()
+    WAIT_SERIES = auto()
     MOVING = auto()
     WAIT_MOVE = auto()
     SETTLING = auto()
+    READING_JOINTS = auto()
+    WAIT_JOINTS = auto()
     MEASURING = auto()
     WAIT_MEASUREMENT = auto()
     FINISHED = auto()
@@ -31,6 +34,8 @@ class MeasurementController(Node):
         self.positions = []
         self.point_ids = []
         self.position_index = 0
+        self.measurement_id = 0
+        self.actual_joints = None
         self.future = None
         self.settle_until = 0.0
         self.wait_since = None
@@ -43,6 +48,8 @@ class MeasurementController(Node):
         self.stop_service = self.create_service(StopMeasurement, "/stop_measurement", self.callback_stop_measurement)
         self.robot_client = self.create_client(MoveRobot, "/move_robot")
         self.measurement_client = self.create_client(SaveMeasurement, "/save_measurement")
+        self.joints_client = self.create_client(GetRobotJoints, "/get_robot_joints")
+        self.series_client = self.create_client(CreateMeasurement, "/create_measurement")
         self.timer = self.create_timer(0.1, self.update)
         self.publish()
 
@@ -60,8 +67,15 @@ class MeasurementController(Node):
             return response
         try:
             positions, ids = load_positions(request.csv_path)
-            if not self.robot_client.service_is_ready() or not self.measurement_client.service_is_ready():
+            if not (self.robot_client.service_is_ready() and self.measurement_client.service_is_ready()
+                    and self.joints_client.service_is_ready() and self.series_client.service_is_ready()):
                 raise RuntimeError("Robot or database measurement service unavailable")
+            if not request.robot_name.strip() or not request.measurement_name.strip():
+                raise ValueError("Select robot and measurement series name")
+            self.robot_name = request.robot_name.strip()
+            self.measurement_name = request.measurement_name.strip()
+            self.measurement_id = 0
+            self.actual_joints = None
             self.positions, self.point_ids = positions, ids
             self.position_index = 0
             self.stop_requested = False
@@ -128,9 +142,27 @@ class MeasurementController(Node):
                 if self.stop_requested:
                     self.finish(State.STOPPED, "Stopped before robot movement")
                 else:
-                    self.future = None
+                    req = CreateMeasurement.Request()
+                    req.robot_name = self.robot_name
+                    req.measurement_name = self.measurement_name
+                    self.future = self.series_client.call_async(req)
+                    self.wait_since = time.monotonic()
+                    self.state = State.WAIT_SERIES
+                    self.publish("Creating measurement series")
+
+            elif self.state == State.WAIT_SERIES:
+                if not self.future.done():
+                    self.check_timeout("Create measurement series")
+                    return
+                reply = self.future.result()
+                if reply is None or not reply.success or reply.measurement_id <= 0:
+                    raise RuntimeError("Cannot create measurement series: " + (reply.message if reply else "no reply"))
+                self.measurement_id = int(reply.measurement_id)
+                if self.stop_requested:
+                    self.finish(State.STOPPED, "Stopped before robot movement")
+                else:
                     self.state = State.MOVING
-                    self.publish("Database ready; next target")
+                    self.publish(f"Series ID {self.measurement_id}; moving")
 
             elif self.state == State.MOVING:
                 if not self.robot_client.service_is_ready():
@@ -159,15 +191,36 @@ class MeasurementController(Node):
 
             elif self.state == State.SETTLING:
                 if time.monotonic() >= self.settle_until:
-                    self.state = State.MEASURING
-                    self.publish("Ready to measure")
+                    self.state = State.READING_JOINTS
+                    self.publish("Reading real KUKA joint angles")
+
+            elif self.state == State.READING_JOINTS:
+                if not self.joints_client.service_is_ready():
+                    raise RuntimeError("Robot joint readout service unavailable")
+                self.future = self.joints_client.call_async(GetRobotJoints.Request())
+                self.wait_since = time.monotonic()
+                self.state = State.WAIT_JOINTS
+
+            elif self.state == State.WAIT_JOINTS:
+                if not self.future.done():
+                    self.check_timeout("Robot joint readout")
+                    return
+                reply = self.future.result()
+                if reply is None or not reply.success or len(reply.joints) != 7:
+                    raise RuntimeError("Robot joint readout failed: " + (reply.message if reply else "no response"))
+                self.actual_joints = [float(q) for q in reply.joints]
+                self.state = State.MEASURING
+                self.publish("Real joints acquired; requesting Leica sample")
 
             elif self.state == State.MEASURING:
                 if not self.measurement_client.service_is_ready():
                     raise RuntimeError("Measurement service unavailable")
                 request = SaveMeasurement.Request()
                 request.save = True
-                request.joints = [float(q) for q in self.positions[self.position_index]]
+                if self.actual_joints is None or len(self.actual_joints) != 7:
+                    raise RuntimeError("No measured KUKA joint positions")
+                request.joints = self.actual_joints
+                request.measurement_id = self.measurement_id
                 self.future = self.measurement_client.call_async(request)
                 self.wait_since = time.monotonic()
                 self.state = State.WAIT_MEASUREMENT
@@ -181,6 +234,7 @@ class MeasurementController(Node):
                 if reply is None or not reply.success:
                     raise RuntimeError("Measurement failed: " + (reply.message if reply else "no response"))
                 self.position_index += 1
+                self.actual_joints = None
                 if self.stop_requested:
                     self.finish(State.STOPPED, "Last measurement committed; sequence stopped")
                 elif self.position_index >= len(self.positions):

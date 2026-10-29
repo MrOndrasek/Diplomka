@@ -1,3 +1,4 @@
+from measurement_system.connection_profiles import leica_endpoint
 """Leica subscriber. Uses one persistent socket, only after ZMQ publisher is running."""
 import logging
 import struct

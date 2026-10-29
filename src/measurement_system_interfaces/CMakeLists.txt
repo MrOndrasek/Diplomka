@@ -10,6 +10,10 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/MoveRobot.srv"
   "srv/SaveMeasurement.srv"
+  "srv/GetRobotJoints.srv"
+  "srv/ReadLeica.srv"
+  "srv/SaveTablePoint.srv"
+  "srv/CreateMeasurement.srv"
   "srv/StartMeasurement.srv"
   "srv/StopMeasurement.srv"
 )

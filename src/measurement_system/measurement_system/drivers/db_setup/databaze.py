@@ -38,32 +38,25 @@ def create_table():
         q6 DOUBLE PRECISION,
         q7 DOUBLE PRECISION
         )""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS table_plane_points (
-            id SERIAL PRIMARY KEY,
-            measurement_id INTEGER REFERENCES measurements(id),
-            point TEXT NOT NULL,
-            distance DOUBLE PRECISION,
-            angleHz DOUBLE PRECISION,
-            angleVt DOUBLE PRECISION
-            )""")
     
     cur.close()
     conn.commit()
 
 
 def get_connection():
+    """Same connection method used by database, calibration and export."""
+    from measurement_system.drivers.db_setup.connection_settings import connect_with_settings
     try:
-        return psycopg2.connect(
-            database="laser_tracker_data",
-            user="dohnaon1",
-            password="1234",
-            host="127.0.0.1",
-            port=5432,
-        )
-    except:
+        return connect_with_settings()
+    except Exception as exc:
+        print(f"PostgreSQL connection failed: {exc}")
         return False
 
 
 if __name__ == "__main__":
     conn = get_connection()
-    main()
+    if conn:
+        try:
+            create_table()
+        finally:
+            conn.close()

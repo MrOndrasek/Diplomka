@@ -148,8 +148,8 @@ def inverse_kinematics(p_cil,T_mat_list,p_E,R_cil,R_E): #p_cil je list se sourad
         J_mat @ J_mat.T + para**2 * np.eye(6),
         e
     )
-    if np.linalg.det(J_mat)==0:
-        q=np.array([[200],[200],[200],[200],[200],[200]])
+    """if np.linalg.det(J_mat)==0:
+        q=np.array([[200],[200],[200],[200],[200],[200]])"""
     """print(p_E)
     print(J_mat)"""
     return q
@@ -221,7 +221,7 @@ def joint_calculation(p_cil,R_cil_model,q_0,max_iter,tolerance):
             else:
                 ik_res=inverse_kinematics(p_cil,fw_res[0],fw_res[1],R_cil_model,fw_res[2])
 
-            parametr = 0.02
+            parametr = 0.1
 
             q_1 = q_0 + ik_res * parametr
 
@@ -250,6 +250,8 @@ def generation_of_movements(number_of_motions,q_0,R_cil):
     
     max_iter=6000
     tolerance=0.01
+
+    list_of_motions=[]
     
     R_fix = np.array([
         [0,-1,0],
@@ -259,16 +261,20 @@ def generation_of_movements(number_of_motions,q_0,R_cil):
     R_cil_model = R_cil @ R_fix.T 
     i=0
 
+    print("zacatek")
     while i<number_of_motions:
-        p_cil=np.array([random.randint(300,600),random.randint(200,500),random.randint(400,700)])
+        print("1")
+        p_cil=np.array([random.randint(150,500),random.randint(-700,-500),random.randint(400,700)])
         result=joint_calculation(p_cil,R_cil_model,q_0,max_iter,tolerance)
-        
+        print("2")
         if result==False:
+            print(":((")
             continue
         else:
             i+=1
             q_0=result[1]
             print(f"[{math.degrees(q_0[0,0])},{math.degrees(q_0[1,0])},{math.degrees(q_0[2,0])},{-math.degrees(q_0[3,0])},{math.degrees(q_0[4,0])},{math.degrees(q_0[5,0])}],")
+            list_of_motions.append([math.degrees(q_0[0,0]),math.degrees(q_0[1,0]),math.degrees(q_0[2,0]),math.degrees(-q_0[3,0]),0,math.degrees(q_0[4,0]),math.degrees(q_0[5,0])])
 
 
 def ball_movements(number_of_points,number_of_support_points):
@@ -359,4 +365,23 @@ def export_positions_to_csv(positions, filename="positions.csv"):
 
     print(f"Pozice uloženy do {filename}")
    
-ball_movements(9,100)
+
+
+
+q_0 = np.radians([
+                [5],
+                [90],
+                [5],
+                [5],
+                [5],
+                [5]
+                ])
+
+
+R_cil = np.array([
+            [-1,0,0],
+            [0,0,1],
+            [0,1,0]
+        ]) @ np.diag([-1,1,-1])
+
+generation_of_movements(5,q_0,R_cil)

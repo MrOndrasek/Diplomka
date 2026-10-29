@@ -13,14 +13,16 @@ from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
 import shutil
 from measurement_system.UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
+from measurement_system.drivers.db_setup.connection_settings import load_settings, save_settings, connect_with_settings
+from measurement_system.connection_profiles import load_profiles, save_profiles, selected_robot, leica_endpoint
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QLayout, QInputDialog,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QDoubleSpinBox,
 )
 
-PAGES = ["Přehled", "Kalibrace", "Import pozic", "Automatické měření", "Export dat", "Nastavení"]
+PAGES = ["Přehled", "Kalibrace", "Import pozic", "Automatické měření", "Ruční ovládání", "Export dat", "Nastavení"]
 JOINT_COLUMNS = ["point_id"] + [f"q{i}" for i in range(1, 8)]
 CART_COLUMNS = ["point_id", "x", "y", "z", "rx", "ry", "rz"]
 
@@ -29,7 +31,10 @@ def group(title, *widgets):
     frame = QGroupBox(title)
     layout = QVBoxLayout(frame)
     for widget in widgets:
-        layout.addWidget(widget)
+        if isinstance(widget, QLayout):
+            layout.addLayout(widget)
+        else:
+            layout.addWidget(widget)
     return frame
 
 
@@ -78,6 +83,10 @@ class MainWindow(QMainWindow):
         self.ros.calibration_result.connect(self._on_calibration_result)
         self.ros.calibration_stop_result.connect(self._on_calibration_stop_result)
         self.ros.calibration_status.connect(self._on_calibration_status)
+        self.ros.manual_move_result.connect(self._manual_move_done)
+        self.ros.manual_leica_result.connect(self._manual_leica_done)
+        self.ros.table_point_result.connect(self._table_point_done)
+        self.ros.table_series_result.connect(self._table_series_done)
         self._module_timer = QTimer(self)
         self._module_timer.timeout.connect(self._refresh_modules)
         self._module_timer.start(1000)
@@ -135,6 +144,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self._calibration())
         self.stack.addWidget(self._import())
         self.stack.addWidget(self._measurement())
+        self.stack.addWidget(self._manual_page())
         self.stack.addWidget(self._export())
         self.stack.addWidget(self._settings())
         outer.addWidget(content, 1)
@@ -251,6 +261,28 @@ class MainWindow(QMainWindow):
         if key == "leica":
             self._connect_leica()
             return
+        if key == "database":
+            try:
+                conn = connect_with_settings()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                        if cur.fetchone()[0] != 1:
+                            raise RuntimeError("Unexpected database health check")
+                finally:
+                    conn.close()
+            except Exception as exc:
+                self.module_labels["database"].setText("Připojení PostgreSQL selhalo")
+                QMessageBox.warning(self, "PostgreSQL nedostupná",
+                    "Databázový uzel nebyl spuštěn. Nastav připojení v záložce Nastavení.\n\n" + str(exc))
+                self._select(PAGES.index("Nastavení"))
+                return
+        if key == "robot":
+            settings = selected_robot()
+            if not settings:
+                QMessageBox.warning(self, "Robot", "Nejdříve vyber robota v Nastavení.")
+                self._select(PAGES.index("Nastavení"))
+                return
         existing = self._processes.get(key)
         if existing is not None and existing.state() != QProcess.NotRunning:
             return
@@ -290,26 +322,12 @@ class MainWindow(QMainWindow):
         # Default uses PolicyKit authentication in a graphical session. Override
         # with LEICA_LAUNCH_MODE=direct only when pysoem has OS permission already.
         mode = os.environ.get("LEICA_LAUNCH_MODE", "pkexec").lower()
+        leica_script = Path(__file__).resolve().parent / "drivers" / "leika_driver" / "leica_connect.py"
+        # For --symlink-install source / build paths both work. No venv assumed.
         if mode == "direct":
-            command = [sys.executable, "-m", "measurement_system.drivers.leika_driver.leica_connect"]
+            command = [sys.executable, str(leica_script)]
         elif mode == "pkexec":
-            PROJECT_ROOT = Path("/home/dohnal/diplomka_ros")
-
-            LEICA_SCRIPT = (
-                PROJECT_ROOT
-                / "src"
-                / "measurement_system"
-                / "measurement_system"
-                / "drivers"
-                / "leika_driver"
-                / "leica_connect.py"
-            )
-
-            command = [
-                "pkexec",
-                "/usr/bin/python3",
-                str(LEICA_SCRIPT)
-            ]
+            command = ["pkexec", sys.executable, str(leica_script)]
         else:
             self.module_labels["leica"].setText("Neznámý LEICA_LAUNCH_MODE")
             return
@@ -366,16 +384,9 @@ class MainWindow(QMainWindow):
         self._module_terminating.discard("leica")
 
     def _process_output(self, key, process):
-        message = bytes(
-            process.readAllStandardOutput()
-        ).decode("utf-8", errors="replace").strip()
-
-        if message:
-            print(f"[{key}] {message}", flush=True)
-            self.statusBar().showMessage(
-                f"{key}: {message[-200:]}",
-                10000
-            )
+        message = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
+        if message and ("ERROR" in message or "Traceback" in message):
+            self.statusBar().showMessage(f"{key}: {message[-200:]}", 10000)
 
     def _process_error(self, key, process):
         self.module_labels[key].setText(f"Chyba spuštění: {process.errorString()}")
@@ -421,17 +432,48 @@ class MainWindow(QMainWindow):
 
     def _calibration(self):
         page, lay = self._page("Kalibrace transformací Leica → stůl → báze robota. Měření bodů se doplní po napojení na tracker a ROS2.")
+        self.table_series_id = QSpinBox()
+        self.table_series_id.setRange(0, 2147483647)
+        self.table_series_id.setSpecialValueText("Vyber nebo založ sérii")
+        self.table_robot_name = QComboBox()
+        self.table_robot_name.addItems([x["name"] for x in load_profiles()["robots"]])
+        self.table_series_name = QLineEdit()
+        self.table_series_name.setPlaceholderText("Např. Kalibrace stolu 01")
+        create_series_button = QPushButton("Založit novou sérii pro kalibraci stolu")
+        create_series_button.clicked.connect(self._create_table_series)
+        series_form = QFormLayout()
+        series_form.addRow("ID existující série", self.table_series_id)
+        series_form.addRow("Robot pro novou sérii", self.table_robot_name)
+        series_form.addRow("Název nové série", self.table_series_name)
+        lay.addWidget(group("Série pro body stolu", series_form, create_series_button,
+            explanation("Každý bod P1–P3 se uloží s measurement_id. ID musí existovat v measurements.")))
         table = QTableWidget(3, 4)
+        self.table_calibration = table
+        self._table_next = 0
         table.setHorizontalHeaderLabels(["Bod", "X [mm]", "Y [mm]", "Z [mm]"])
         for i in range(3):
             table.setItem(i, 0, QTableWidgetItem(f"P{i + 1}"))
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.setMaximumHeight(170)
-        btn = QPushButton("Změřit bod Leica (zatím nedostupné)")
-        btn.setEnabled(False)
+        btn = QPushButton("Změřit aktuální bod Leica")
+        btn.clicked.connect(self._measure_table_point)
+        self.table_calibration_status = QLabel("Připraveno pro P1")
         lay.addWidget(group("1. Souřadnicový systém stolu – 3 body", table, btn,
+                            self.table_calibration_status,
                             explanation("P1 = počátek, P1→P2 = osa X, P3 určuje stranu osy Y.")))
-        self.calib_info = QLabel('Nezahájeno – nejprve připoj kalibrační uzel a importuj CSV s q1–q7.')
+        self.calibration_csv = None
+        self.calibration_csv_label = QLabel("CSV pro kalibraci: nevybráno")
+        calibration_file_button = QPushButton("Načíst samostatné CSV pro kalibraci B")
+        calibration_file_button.clicked.connect(self._load_calibration_csv)
+        lay.addWidget(group("Vstup kalibrace B", calibration_file_button, self.calibration_csv_label))
+        self.calib_robot_name = QComboBox()
+        self.calib_robot_name.addItems([x["name"] for x in load_profiles()["robots"]])
+        self.calib_series_name = QLineEdit("Kalibrace B")
+        calib_metadata = QFormLayout()
+        calib_metadata.addRow("Robot pro kalibraci B", self.calib_robot_name)
+        calib_metadata.addRow("Název kalibrační série", self.calib_series_name)
+        lay.addLayout(calib_metadata)
+        self.calib_info = QLabel('Nezahájeno – vyber CSV určené pouze pro kalibraci B.')
         self.calib_info.setWordWrap(True)
         self.calib_progress = QProgressBar()
         self.calib_progress.setRange(0, 1)
@@ -535,6 +577,14 @@ class MainWindow(QMainWindow):
             "Spuštění ROS2 sekvence: Start pouze zahájí controller. "
             "Výsledek služby nepotvrzuje dokončení celé série."
         )
+        self.robot_name_edit = QComboBox()
+        self.robot_name_edit.addItems([x["name"] for x in load_profiles()["robots"]])
+        self.series_name_edit = QLineEdit()
+        self.series_name_edit.setPlaceholderText("Např. Opakovatelnost – série 01")
+        names = QFormLayout()
+        names.addRow("Robot", self.robot_name_edit)
+        names.addRow("Název nové série", self.series_name_edit)
+        lay.addLayout(names)
         self.measure_count = QLabel("Dosud nebyly importovány pozice")
         self.measure_state = QLabel("Stav: IDLE")
         lay.addWidget(self.measure_state)
@@ -626,20 +676,19 @@ class MainWindow(QMainWindow):
         self._update_stop_button()
 
     def _start_robot_calibration(self):
-        if not self.source_path or not self.rows:
-            QMessageBox.warning(self, 'Kalibrace', 'Nejdřív importuj CSV s kloubovými pozicemi q1–q7.')
-            return
-        if self.headers != JOINT_COLUMNS:
-            QMessageBox.warning(self, 'Kalibrace', 'Kalibrace vyžaduje CSV point_id,q1,...,q7.')
+        if not self.calibration_csv:
+            QMessageBox.warning(self, 'Kalibrace', 'Nejprve vyber samostatné kalibrační CSV.')
             return
         answer = QMessageBox.question(self, 'Kalibrace báze',
-            f'Spustit kalibrační pohyby do {len(self.rows)} pozic? Robot se začne pohybovat. '
+            f'Spustit kalibrační pohyby ze souboru {self.calibration_csv}? Robot se začne pohybovat. '
             'Zkontroluj limity, trajektorii a bezpečnost pracoviště.',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
         try:
-            self.ros.start_robot_calibration(self.source_path)
+            if self.calib_robot_name.currentText() != load_profiles()["selected_robot"]:
+                raise ValueError("Kalibrace vyžaduje aktivního robota ze záložky Nastavení")
+            self.ros.start_robot_calibration(self.calibration_csv, self.calib_robot_name.currentText(), self.calib_series_name.text())
             self.calib_info.setText('Odesílám požadavek na kalibraci…')
         except Exception as exc:
             QMessageBox.warning(self, 'Kalibrace', str(exc))
@@ -680,7 +729,12 @@ class MainWindow(QMainWindow):
         try:
             self._start_pending = True
             self._update_start_button()
-            self.ros.start_measurement(self.source_path)
+            if self.robot_name_edit.currentText() != load_profiles()["selected_robot"]:
+                raise ValueError("Pro měření vyber robota nastaveného jako aktivní v záložce Nastavení")
+            if not self.robot_name_edit.currentText().strip() or not self.series_name_edit.text().strip():
+                raise ValueError("Vyplň robota a název měřicí série")
+            self.ros.start_measurement(self.source_path, self.robot_name_edit.currentText().strip(),
+                                       self.series_name_edit.text().strip())
             self.measure_log.appendPlainText("Odesílám požadavek na start...")
         except Exception as exc:
             self._start_pending = False
@@ -753,10 +807,153 @@ class MainWindow(QMainWindow):
         self.ros.close()
         event.accept()
 
+    def _load_calibration_csv(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "Kalibrace B – CSV", "", "CSV (*.csv)")
+        if not filename:
+            return
+        try:
+            from measurement_system.measurement.position_importer import load_positions
+            positions, point_ids = load_positions(filename)
+            if len(positions) < 3:
+                raise ValueError("Kalibrace B vyžaduje alespoň 3 polohy")
+            self.calibration_csv = filename
+            self.calibration_csv_label.setText(f"{filename} ({len(positions)} bodů)")
+        except Exception as exc:
+            QMessageBox.warning(self, "Chybné kalibrační CSV", str(exc))
+
+    def _create_table_series(self):
+        if self._sequence_running():
+            QMessageBox.warning(self, "Série", "Nejprve dokonči automatické měření")
+            return
+        try:
+            self.ros.create_table_series(self.table_robot_name.currentText(), self.table_series_name.text())
+            self.table_calibration_status.setText("Zakládám sérii…")
+        except Exception as exc:
+            QMessageBox.warning(self, "Série", str(exc))
+
+    def _table_series_done(self, success, measurement_id, message):
+        if success:
+            self.table_series_id.setValue(measurement_id)
+            self._table_next = 0
+            for row in range(3):
+                for col in (1, 2, 3):
+                    self.table_calibration.setItem(row, col, QTableWidgetItem(""))
+            self.table_calibration_status.setText(f"Nová série ID {measurement_id}; připraveno pro P1")
+        else:
+            QMessageBox.warning(self, "Série", message)
+
+    def _measure_table_point(self):
+        if self._sequence_running():
+            QMessageBox.warning(self, "Leica", "Probíhá automatické měření")
+            return
+        if self._table_next >= 3:
+            answer = QMessageBox.question(self, "Nová kalibrace stolu",
+                                          "Všechny tři body jsou změřené. Začít znovu od P1?")
+            if answer != QMessageBox.Yes:
+                return
+            self._table_next = 0
+        if self.table_series_id.value() <= 0:
+            QMessageBox.warning(self, "Kalibrace", "Zvol existující ID měřicí série nebo založ novou")
+            return
+        try:
+            self.ros.table_measure(self.table_series_id.value(), self._table_next + 1)
+            self.table_calibration_status.setText(f"Čekám na nový Leica vzorek pro P{self._table_next+1}…")
+        except Exception as exc:
+            QMessageBox.warning(self, "Leica", str(exc))
+
+    def _table_point_done(self, data):
+        if not data.get("success"):
+            self.table_calibration_status.setText(data.get("message", "Chyba Leica"))
+            return
+        import math
+        d, h, v = data["distance"], data["hz"], data["vt"]
+        # Expected Leica convention: Hz and Vt angles in radians, Vt is zenith angle.
+        # Validate this against the actual tracker protocol before applying transform.
+        x = d * math.sin(v) * math.cos(h)
+        y = d * math.sin(v) * math.sin(h)
+        z = d * math.cos(v)
+        for col, value in enumerate((x, y, z), 1):
+            self.table_calibration.setItem(self._table_next, col, QTableWidgetItem(f"{value:.6f}"))
+        self._table_next += 1
+        self.table_calibration_status.setText(
+            f"Uloženo do DB (ID bodu {data.get('point_id')}, série {self.table_series_id.value()}); hotovo {self._table_next}/3; Leica spherical conversion assumes radians / zenith angle. "
+            + (f"Další P{self._table_next+1}" if self._table_next < 3 else "Všechny body hotové"))
+
+    def _manual_page(self):
+        page, lay = self._page("Ruční pohyb v kloubovém prostoru (stupně), odečet Leica bez uložení do databáze.")
+        self.manual_joints = []
+        form = QFormLayout()
+        for i in range(7):
+            editor = QDoubleSpinBox()
+            editor.setRange(-360.0, 360.0)
+            editor.setDecimals(3)
+            editor.setSuffix(" °")
+            self.manual_joints.append(editor)
+            form.addRow(f"q{i+1}", editor)
+        self.manual_velocity = QDoubleSpinBox()
+        self.manual_velocity.setRange(0.01, 1.0)
+        self.manual_velocity.setSingleStep(0.05)
+        self.manual_velocity.setValue(0.1)
+        form.addRow("Relativní rychlost", self.manual_velocity)
+        lay.addLayout(form)
+        self.manual_arm = QCheckBox("Pracovní prostor je bezpečný; potvrzuji ruční pohyb")
+        lay.addWidget(self.manual_arm)
+        self.manual_move_button = QPushButton("Pohnout robotem")
+        self.manual_move_button.clicked.connect(self._manual_move)
+        lay.addWidget(self.manual_move_button)
+        self.manual_sample_button = QPushButton("Změřit polohu Leica (bez uložení)")
+        self.manual_sample_button.clicked.connect(self._manual_measure)
+        lay.addWidget(self.manual_sample_button)
+        self.manual_result = QPlainTextEdit()
+        self.manual_result.setReadOnly(True)
+        lay.addWidget(self.manual_result)
+        return page
+
+    def _manual_move(self):
+        if self._sequence_running():
+            QMessageBox.warning(self, "Robot", "Běží automatická sekvence")
+            return
+        if not self.manual_arm.isChecked():
+            QMessageBox.warning(self, "Robot", "Potvrď bezpečný pracovní prostor")
+            return
+        reply = QMessageBox.question(self, "Potvrdit ruční pohyb", "Opravdu odeslat pohyb robota?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            self.ros.manual_move([w.value() for w in self.manual_joints], self.manual_velocity.value())
+            self.manual_move_button.setEnabled(False)
+            self.manual_arm.setChecked(False)  # Confirm anew for each manual move.
+            self.manual_result.appendPlainText("Příkaz pohybu odeslán…")
+        except Exception as exc:
+            QMessageBox.warning(self, "Robot", str(exc))
+
+    def _manual_move_done(self, success, message):
+        self.manual_move_button.setEnabled(True)
+        self.manual_result.appendPlainText(("Pohyb hotov: " if success else "Chyba pohybu: ") + message)
+
+    def _manual_measure(self):
+        if self._sequence_running():
+            QMessageBox.warning(self, "Leica", "Probíhá automatické měření")
+            return
+        try:
+            self.ros.manual_measure()
+            self.manual_result.appendPlainText("Čekám na Leica data…")
+        except Exception as exc:
+            QMessageBox.warning(self, "Leica", str(exc))
+
+    def _manual_leica_done(self, data):
+        if data.get("success"):
+            self.manual_result.appendPlainText(
+                f"Leica t={data['timestamp']}, distance={data['distance']:.6f}, "
+                f"Hz={data['hz']:.6f}, Vt={data['vt']:.6f} (do DB neuloženo)")
+        else:
+            self.manual_result.appendPlainText("Chyba Leica: " + data.get("message", "?"))
+
     def _export(self):
         page, lay = self._page("Export surových záznamů z PostgreSQL; výpočty citlivosti zůstávají mimo aplikaci.")
         self.export_table_select = QComboBox()
-        self.export_table_select.addItems(["measurement_data", "table_plane_points", "robot_base_calibration_points"])
+        self.export_table_select.addItems(["measurement_data", "table_calibration_points", "robot_base_calibration_points", "robot_base_calibration_runs"])
         lay.addWidget(group("Databázová tabulka", self.export_table_select))
         buttons = QHBoxLayout()
         self.btn_csv = QPushButton("Export do CSV")
@@ -803,18 +1000,164 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "Export se nezdařil", message)
 
     def _settings(self):
-        page, lay = self._page("Konfigurace připojení bude oddělena od zdrojového kódu a nebude obsahovat hesla uložená v Gitu.")
+        page, lay = self._page(
+            "Nastavení PostgreSQL platí po restartování databázového a kalibračního uzlu. "
+            "Heslo se ukládá mimo Git do uživatelského souboru s oprávněním 0600."
+        )
+        current = load_settings()
+        self.pg_fields = {}
         form = QFormLayout()
-        for label, default in [("ROS2 domain ID", "0"), ("KUKA adresa", "nenastaveno"),
-                               ("Leica endpoint", "tcp://localhost:5555"), ("Databáze", "PostgreSQL")]:
-            edit = QLineEdit(default)
-            edit.setReadOnly(True)
+        for key, label, default in [
+            ("host", "Server / IP", "127.0.0.1"),
+            ("port", "Port", "5432"),
+            ("dbname", "Název databáze", "laser_tracker_data"),
+            ("user", "Uživatel", ""),
+            ("password", "Heslo", ""),
+        ]:
+            edit = QLineEdit(str(current.get(key, default)))
+            if key == "password":
+                edit.setEchoMode(QLineEdit.Password)
             form.addRow(label, edit)
+            self.pg_fields[key] = edit
         panel = QWidget()
         panel.setLayout(form)
-        lay.addWidget(group("Konfigurace – pouze náhled", panel))
+        lay.addWidget(group("PostgreSQL připojení", panel))
+        test_btn = QPushButton("Otestovat připojení")
+        test_btn.clicked.connect(self._test_pg_settings)
+        save_btn = QPushButton("Uložit nastavení")
+        save_btn.clicked.connect(self._save_pg_settings)
+        lay.addWidget(test_btn)
+        lay.addWidget(save_btn)
+        self.pg_status = QLabel("Pro použití změn restartuj databázový i kalibrační uzel.")
+        self.pg_status.setWordWrap(True)
+        lay.addWidget(self.pg_status)
+
+        profiles = load_profiles()
+        self.robot_list = QComboBox()
+        self.robot_list.addItems([x["name"] for x in profiles["robots"]])
+        self.robot_list.setCurrentText(profiles.get("selected_robot", ""))
+        self.robot_list.currentTextChanged.connect(self._robot_profile_changed)
+        self.robot_host = QLineEdit()
+        self.robot_port = QSpinBox()
+        self.robot_port.setRange(1, 65535)
+        self.robot_port.setValue(30001)
+        robot_form = QFormLayout()
+        robot_form.addRow("Robot / typ", self.robot_list)
+        robot_form.addRow("IP adresa robota", self.robot_host)
+        robot_form.addRow("TCP port KUKA", self.robot_port)
+        buttons = QHBoxLayout()
+        add_btn = QPushButton("Přidat robota")
+        add_btn.clicked.connect(self._add_robot)
+        buttons.addWidget(add_btn)
+        save_robot_btn = QPushButton("Uložit robota a vybrat")
+        save_robot_btn.clicked.connect(self._save_robot)
+        buttons.addWidget(save_robot_btn)
+        robot_form.addRow(buttons)
+        lay.addWidget(group("Robot / připojení KUKA", robot_form))
+        self._robot_profile_changed(self.robot_list.currentText())
+
+        leica = profiles["leica"]
+        self.leica_interface = QLineEdit(leica.get("interface", "eno4"))
+        self.leica_host = QLineEdit(leica.get("host", "127.0.0.1"))
+        self.leica_port = QSpinBox()
+        self.leica_port.setRange(1, 65535)
+        self.leica_port.setValue(int(leica.get("port", 5555)))
+        leica_form = QFormLayout()
+        leica_form.addRow("EtherCAT rozhraní", self.leica_interface)
+        leica_form.addRow("ZMQ TCP host", self.leica_host)
+        leica_form.addRow("ZMQ TCP port", self.leica_port)
+        save_leica_btn = QPushButton("Uložit Leica")
+        save_leica_btn.clicked.connect(self._save_leica)
+        leica_form.addRow(save_leica_btn)
+        lay.addWidget(group("Leica / ZMQ", leica_form))
+        lay.addWidget(explanation("Připojení k zařízením se načítá při spuštění uzlů. Po změně restartuj příslušný uzel a Leica publisher. ZMQ host je adresa publisheru, není to EtherCAT IP."))
         lay.addStretch()
         return page
+
+    def _robot_profile_changed(self, name):
+        item = next((x for x in load_profiles()["robots"] if x["name"] == name), None)
+        if item is not None:
+            self.robot_host.setText(item["host"])
+            self.robot_port.setValue(int(item["port"]))
+
+    def _sync_robot_selectors(self, names, chosen):
+        for key in ("robot_name_edit", "table_robot_name", "calib_robot_name"):
+            editor = getattr(self, key, None)
+            if editor is not None:
+                editor.blockSignals(True)
+                editor.clear()
+                editor.addItems(names)
+                editor.setCurrentText(chosen)
+                editor.blockSignals(False)
+
+    def _add_robot(self):
+        name, accepted = QInputDialog.getText(self, "Nový robot", "Název / typ robota:")
+        name = name.strip()
+        if not accepted or not name:
+            return
+        data = load_profiles()
+        if any(x["name"] == name for x in data["robots"]):
+            QMessageBox.warning(self, "Robot", "Robot s tímto názvem už existuje.")
+            return
+        data["robots"].append({"name": name, "host": "172.31.1.147", "port": 30001})
+        data["selected_robot"] = name
+        save_profiles(data)
+        self.robot_list.addItem(name)
+        self.robot_list.setCurrentText(name)
+        self._sync_robot_selectors([x["name"] for x in data["robots"]], name)
+
+    def _save_robot(self):
+        name = self.robot_list.currentText()
+        host = self.robot_host.text().strip()
+        if not name or not host:
+            QMessageBox.warning(self, "Robot", "Zadej robota a IP/hostname.")
+            return
+        data = load_profiles()
+        item = next((x for x in data["robots"] if x["name"] == name), None)
+        if item is None:
+            return
+        item.update(host=host, port=self.robot_port.value())
+        data["selected_robot"] = name
+        save_profiles(data)
+        self._sync_robot_selectors([x["name"] for x in data["robots"]], name)
+        QMessageBox.information(self, "Robot", "Uloženo. Před připojením restartuj robot_node.")
+
+    def _save_leica(self):
+        host = self.leica_host.text().strip()
+        interface = self.leica_interface.text().strip()
+        if not host or not interface:
+            QMessageBox.warning(self, "Leica", "Vyplň ZMQ host a EtherCAT rozhraní.")
+            return
+        data = load_profiles()
+        data["leica"] = {"host": host, "port": self.leica_port.value(), "interface": interface}
+        save_profiles(data)
+        QMessageBox.information(self, "Leica", "Uloženo. Restartuj publisher a databázový uzel.")
+
+    def _pg_values(self):
+        return {key: editor.text().strip() for key, editor in self.pg_fields.items()}
+
+    def _test_pg_settings(self):
+        try:
+            conn = connect_with_settings(self._pg_values())
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+            finally:
+                conn.close()
+            self.pg_status.setText("PostgreSQL: připojení je funkční (SELECT 1 OK).")
+        except Exception as exc:
+            self.pg_status.setText("PostgreSQL: chyba připojení. " + str(exc))
+
+    def _save_pg_settings(self):
+        try:
+            save_settings(self._pg_values())
+            self.pg_status.setText(
+                "Nastavení uloženo. Restartuj database_node a robot_calibration_node, "
+                "případně UI kvůli exportu."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Nastavení PostgreSQL", str(exc))
 
     def _select(self, index):
         self.stack.setCurrentIndex(index)
@@ -823,7 +1166,9 @@ class MainWindow(QMainWindow):
             button.setChecked(i == index)
 
     def _style(self):
-        self.setStyleSheet("""
+        checkbox_icon = (Path(__file__).resolve().parent / "black_tick.svg").as_posix()
+        QApplication.instance().setStyleSheet("""
+            QWidget { color: #151b26; }
             QMainWindow, #content { background: #f5f7fb; }
             #sidebar { background: #152238; }
             #brand { font-size: 21px; font-weight: 800; color: white; letter-spacing: 2px; }
@@ -845,12 +1190,51 @@ class MainWindow(QMainWindow):
                           border-radius: 7px; padding: 11px 15px; font-weight: bold; }
             QPushButton:disabled { background: #dce2ea; color: #7b8797; }
             QPushButton:hover:!disabled { background: #1c4f95; }
-            QTableWidget { background: white; border: 1px solid #dfe5ed; gridline-color: #edf0f4; }
-            QHeaderView::section { background: #e9edf4; border: none; padding: 9px; font-weight: bold; }
-            QComboBox, QLineEdit { background: white; border: 1px solid #dce2eb; border-radius: 5px; padding: 8px; }
+            QPlainTextEdit, QTextEdit { background: white; color: #151b26; }
+            QTableWidget { background: white; color: #151b26; border: 1px solid #dfe5ed; gridline-color: #edf0f4; }
+            QHeaderView::section { color: #151b26; background: #e9edf4; border: none; padding: 9px; font-weight: bold; }
+            /* Form controls, including editable lists and popup menus */
+            QComboBox, QLineEdit, QDoubleSpinBox, QSpinBox {
+                color: #151b26; background-color: #ffffff;
+                border: 1px solid #dce2eb; border-radius: 5px; padding: 8px;
+                selection-background-color: #dceafd; selection-color: #111827;
+            }
+            QComboBox:editable { background-color: #ffffff; }
+            QComboBox::drop-down { background-color: #f1f5f9; border: none;
+                                    border-left: 1px solid #dce2eb; width: 22px; }
+            QComboBox QAbstractItemView,
+            QComboBox QListView, QListView, QListWidget, QTreeView, QTableView {
+                color: #151b26; background-color: #ffffff;
+                alternate-background-color: #f6f8fc;
+                selection-background-color: #dceafd;
+                selection-color: #111827;
+                border: 1px solid #dce2eb;
+                outline: 0;
+            }
+            QAbstractItemView::item { color: #151b26; background-color: #ffffff; }
+            QAbstractItemView::item:selected { color: #111827; background-color: #dceafd; }
+            QAbstractItemView::item:hover { color: #111827; background-color: #edf4ff; }
+            QMenu { background-color: #ffffff; color: #151b26;
+                    border: 1px solid #dce2eb; }
+            QMenu::item { background-color: #ffffff; color: #151b26; padding: 6px 20px; }
+            QMenu::item:selected { background-color: #dceafd; color: #111827; }
+            /* QMessageBox, QInputDialog and file-selection dialogues */
+            QDialog, QMessageBox, QInputDialog, QFileDialog {
+                background-color: #ffffff; color: #151b26;
+            }
+            QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel,
+            QFileDialog QLabel { color: #151b26; background: transparent; }
+            QDialog QGroupBox { background-color: #ffffff; color: #151b26; }
+            QToolTip { background-color: #ffffff; color: #151b26;
+                       border: 1px solid #9aa7b7; padding: 5px; }
+            QCheckBox { color: #151b26; spacing: 8px; }
+            QCheckBox::indicator { width: 18px; height: 18px; background: white;
+                                   border: 2px solid black; border-radius: 3px; }
+            QCheckBox::indicator:checked { image: url(CHECKBOX_ICON_PATH); background: white;
+                                           border: 2px solid black; }
             QProgressBar { border: 1px solid #d7dfe9; border-radius: 6px; height: 20px; text-align: center; }
             QProgressBar::chunk { background: #245caa; }
-        """)
+        """.replace("CHECKBOX_ICON_PATH", checkbox_icon))
 
 
 def main():

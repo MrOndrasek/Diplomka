@@ -1,33 +1,29 @@
 import pysoem
 import time
 import zmq
-import signal
+# Support direct file execution through pkexec (which strips PYTHONPATH).
 import sys
-
-
-class StopPublisher(Exception):
-    pass
-
-
-def _stop_handler(signum, frame):
-    raise StopPublisher()
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from measurement_system.connection_profiles import load_profiles
 
 
 class Connection:
-    def __init__(self, port):
+    def __init__(self, port, zmq_port=5555):
         self.port = port
         self._master = pysoem.Master()
 
         self.ctx = zmq.Context() 
         self.sock = self.ctx.socket(zmq.PUB)
-        self.sock.bind("tcp://*:5555")
+        self.sock.bind(f"tcp://*:{int(zmq_port)}")
 
     def run(self):
-        try:
-            self._master.open(self.port)
+        self._master.open(self.port)
+        self._master.config_init()
+        if len(self._master.slaves) == 0:
+            print("No slaves found")
+        elif len(self._master.slaves) > 0:
             self._master.config_init()
-            if not self._master.slaves:
-                raise RuntimeError(f"No EtherCAT slaves found on {self.port}")
             self._master.config_map()
 
             self._master.send_processdata()
@@ -50,20 +46,17 @@ class Connection:
                         data
                     ])
                     time.sleep(2)
-            except (KeyboardInterrupt, StopPublisher):
-                print("Leica publisher stopped", flush=True)
-        finally:
-            self._master.close()
-            self.sock.close()
-            self.ctx.term()
+            except KeyboardInterrupt:
+                print("ended")
+            finally:
+                self._master.close()
+                self.sock.close()
+                self.ctx.term()
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, _stop_handler)
     try:
-        Connection("eno4").run()
-    except (KeyboardInterrupt, StopPublisher):
-        pass
+        cfg = load_profiles()["leica"]
+        Connection(cfg["interface"], cfg["port"]).run()
     except Exception as e:
-        print(f"Leica error: {e}", file=sys.stderr, flush=True)
-        sys.exit(1)
+        print(f"Leica error: {e}")
