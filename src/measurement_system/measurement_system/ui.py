@@ -5,6 +5,8 @@ The user must explicitly arm the start button.
 """
 import csv
 import os
+import socket
+import tempfile
 import shutil
 from pathlib import Path
 import sys
@@ -15,6 +17,7 @@ from measurement_system.UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from measurement_system.drivers.db_setup.connection_settings import load_settings, save_settings, connect_with_settings
 from measurement_system.connection_profiles import load_profiles, save_profiles, selected_robot, leica_endpoint
+from measurement_system.drivers.db_setup.robot_registry import add_robot, update_robot
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QLayout, QInputDialog,
@@ -80,9 +83,6 @@ class MainWindow(QMainWindow):
         self.ros.stop_result.connect(self._on_stop_result)
         self.ros.measurement_status.connect(self._on_measurement_status)
         self.ros.modules_status.connect(self._on_modules_status)
-        self.ros.calibration_result.connect(self._on_calibration_result)
-        self.ros.calibration_stop_result.connect(self._on_calibration_stop_result)
-        self.ros.calibration_status.connect(self._on_calibration_status)
         self.ros.manual_move_result.connect(self._manual_move_done)
         self.ros.manual_leica_result.connect(self._manual_leica_done)
         self.ros.table_point_result.connect(self._table_point_done)
@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self._module_timer.start(1000)
         self._processes = {}
         self._leica_publisher = None
+        self._leica_stop_dir = None
         self._leica_stopping = False
         self._module_terminating = set()
         self._latest_sequence_state = "IDLE"
@@ -172,7 +173,6 @@ class MainWindow(QMainWindow):
             ("leica", "Leica Tracker", "ZMQ stream / monitor"),
             ("database", "PostgreSQL", "database_node / save_measurement"),
             ("controller", "Measurement Controller", "start_measurement"),
-            ("calibration", "Kalibrace báze", "robot_calibration_node"),
         ]
         for i, (key, title, detail) in enumerate(modules):
             box = QGroupBox(title)
@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
                 "Tento uzel nebyl spuštěn z UI. Nelze jej bezpečně ukončit tímto tlačítkem."
             )
             return
-        if self._sequence_running() and key in ("robot", "database", "controller", "calibration", "leica"):
+        if self._sequence_running() and key in ("robot", "database", "controller", "leica"):
             QMessageBox.warning(
                 self, "Probíhá sekvence",
                 "Nejdříve požádej o zastavení sekvence a počkej na stav STOPPED nebo FINISHED."
@@ -241,8 +241,13 @@ class MainWindow(QMainWindow):
             self._leica_stopping = True
             publisher = self._leica_publisher
             if publisher is not None and publisher.state() != QProcess.NotRunning:
-                publisher.terminate()
-                QTimer.singleShot(3000, lambda p=publisher: self._check_terminated("leica publisher", p))
+                # Cooperative shutdown works even when publisher was started through pkexec.
+                # No SIGKILL of an unknown privileged process.
+                if self._leica_stop_dir is not None:
+                    (Path(self._leica_stop_dir.name) / "stop").touch()
+                else:
+                    publisher.terminate()
+                QTimer.singleShot(4500, lambda p=publisher: self._check_terminated("leica publisher", p))
         if process is not None and process.state() != QProcess.NotRunning:
             process.terminate()  # asynchronous, not blocking Qt event loop
             QTimer.singleShot(3000, lambda k=key, p=process: self._check_terminated(k, p))
@@ -292,7 +297,6 @@ class MainWindow(QMainWindow):
             "robot": "measurement_system.nodes.robot_node",
             "database": "measurement_system.nodes.database_node",
             "controller": "measurement_system.nodes.controller_node",
-            "calibration": "measurement_system.nodes.robot_calibration_node",
             "leica": "measurement_system.leica_monitor",
         }
         command = [sys.executable, "-m", names[key]]
@@ -319,15 +323,37 @@ class MainWindow(QMainWindow):
             self.module_labels["leica"].setText("Monitor už běží; odpoj jej a zkus znovu")
             return
         self._leica_stopping = False
+        # An already-running external publisher must not trigger a second EtherCAT
+        # master (which can steal the slave). Subscribe to it instead.
+        try:
+            from urllib.parse import urlparse
+            endpoint = leica_endpoint()
+            address = urlparse(endpoint)
+            host = address.hostname or "127.0.0.1"
+            if host in ("127.0.0.1", "localhost", "::1"):
+                with socket.create_connection((host, address.port), timeout=0.35):
+                    pass
+                self.module_labels["leica"].setText("ZMQ publisher už běží – připojuji monitor")
+                self._connect_monitor()
+                return
+        except (OSError, ValueError, TypeError):
+            pass
         # Default uses PolicyKit authentication in a graphical session. Override
         # with LEICA_LAUNCH_MODE=direct only when pysoem has OS permission already.
         mode = os.environ.get("LEICA_LAUNCH_MODE", "pkexec").lower()
         leica_script = Path(__file__).resolve().parent / "drivers" / "leika_driver" / "leica_connect.py"
         # For --symlink-install source / build paths both work. No venv assumed.
+        import tempfile
+        self._leica_stop_dir = tempfile.TemporaryDirectory(prefix="diplomka_leica_")
+        stop_file = str(Path(self._leica_stop_dir.name) / "stop")
+        leica_cfg = load_profiles()["leica"]
+        publisher_args = [str(leica_script), "--stop-file", stop_file,
+                          "--interface", str(leica_cfg["interface"]),
+                          "--zmq-port", str(int(leica_cfg["port"]))]
         if mode == "direct":
-            command = [sys.executable, str(leica_script)]
+            command = [sys.executable, *publisher_args]
         elif mode == "pkexec":
-            command = ["pkexec", sys.executable, str(leica_script)]
+            command = ["pkexec", sys.executable, *publisher_args]
         else:
             self.module_labels["leica"].setText("Neznámý LEICA_LAUNCH_MODE")
             return
@@ -382,11 +408,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Leica publisher se ukončil. Ověř oprávnění EtherCAT a výpis procesu.", 10000)
         self._leica_stopping = False
         self._module_terminating.discard("leica")
+        if self._leica_stop_dir is not None:
+            self._leica_stop_dir.cleanup()
+            self._leica_stop_dir = None
 
     def _process_output(self, key, process):
         message = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
-        if message and ("ERROR" in message or "Traceback" in message):
-            self.statusBar().showMessage(f"{key}: {message[-200:]}", 10000)
+        if message and ("leica" in key.lower() or "error" in message.lower() or "Traceback" in message):
+            print(f"[{key}] {message}", flush=True)
+            if "error" in message.lower() or "Traceback" in message:
+                self.statusBar().showMessage(f"{key}: {message[-200:]}", 10000)
 
     def _process_error(self, key, process):
         self.module_labels[key].setText(f"Chyba spuštění: {process.errorString()}")
@@ -411,9 +442,11 @@ class MainWindow(QMainWindow):
                 publisher = self._leica_publisher
                 pub_alive = publisher is not None and publisher.state() != QProcess.NotRunning
                 alive = alive or pub_alive
-                ready = bool(ready and pub_alive)
+                # Monitor proves recent ZMQ data, regardless of whether the
+                # publisher was started by the UI or by an external terminal.
+                ready = bool(ready)
             if ready:
-                text = "Leica: publisher běží, ZMQ přijímá data" if key == "leica" else "ROS2 služba dostupná (hardware neověřen)"
+                text = "Leica: ZMQ stream aktivní (monitor přijímá data)" if key == "leica" else "ROS2 služba dostupná (hardware neověřen)"
             elif alive:
                 text = "Proces běží, čekám na službu/data"
             else:
@@ -424,14 +457,18 @@ class MainWindow(QMainWindow):
                 self.module_buttons[key].setText("Odpojit / ukončit uzel")
                 self.module_buttons[key].setEnabled(not terminating and not self._sequence_running())
             elif ready:
-                self.module_buttons[key].setText("Externě spuštěno")
-                self.module_buttons[key].setEnabled(False)
+                if key == "leica":
+                    self.module_buttons[key].setText("Připojit vlastní monitor")
+                    self.module_buttons[key].setEnabled(True)
+                else:
+                    self.module_buttons[key].setText("Externě spuštěno")
+                    self.module_buttons[key].setEnabled(False)
             else:
                 self.module_buttons[key].setText("Připojit")
                 self.module_buttons[key].setEnabled(True)
 
     def _calibration(self):
-        page, lay = self._page("Kalibrace transformací Leica → stůl → báze robota. Měření bodů se doplní po napojení na tracker a ROS2.")
+        page, lay = self._page("Kalibrace stolu ze tří surových měření Leica (P1–P3).")
         self.table_series_id = QSpinBox()
         self.table_series_id.setRange(0, 2147483647)
         self.table_series_id.setSpecialValueText("Vyber nebo založ sérii")
@@ -450,7 +487,7 @@ class MainWindow(QMainWindow):
         table = QTableWidget(3, 4)
         self.table_calibration = table
         self._table_next = 0
-        table.setHorizontalHeaderLabels(["Bod", "X [mm]", "Y [mm]", "Z [mm]"])
+        table.setHorizontalHeaderLabels(["Bod", "Distance", "Angle Hz", "Angle Vt"])
         for i in range(3):
             table.setItem(i, 0, QTableWidgetItem(f"P{i + 1}"))
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -460,34 +497,7 @@ class MainWindow(QMainWindow):
         self.table_calibration_status = QLabel("Připraveno pro P1")
         lay.addWidget(group("1. Souřadnicový systém stolu – 3 body", table, btn,
                             self.table_calibration_status,
-                            explanation("P1 = počátek, P1→P2 = osa X, P3 určuje stranu osy Y.")))
-        self.calibration_csv = None
-        self.calibration_csv_label = QLabel("CSV pro kalibraci: nevybráno")
-        calibration_file_button = QPushButton("Načíst samostatné CSV pro kalibraci B")
-        calibration_file_button.clicked.connect(self._load_calibration_csv)
-        lay.addWidget(group("Vstup kalibrace B", calibration_file_button, self.calibration_csv_label))
-        self.calib_robot_name = QComboBox()
-        self.calib_robot_name.addItems([x["name"] for x in load_profiles()["robots"]])
-        self.calib_series_name = QLineEdit("Kalibrace B")
-        calib_metadata = QFormLayout()
-        calib_metadata.addRow("Robot pro kalibraci B", self.calib_robot_name)
-        calib_metadata.addRow("Název kalibrační série", self.calib_series_name)
-        lay.addLayout(calib_metadata)
-        self.calib_info = QLabel('Nezahájeno – vyber CSV určené pouze pro kalibraci B.')
-        self.calib_info.setWordWrap(True)
-        self.calib_progress = QProgressBar()
-        self.calib_progress.setRange(0, 1)
-        self.calib_progress.setValue(0)
-        calib_start = QPushButton('Spustit kalibraci báze z importovaného CSV')
-        calib_start.clicked.connect(self._start_robot_calibration)
-        calib_stop = QPushButton('Zastavit kalibraci po aktuálním kroku')
-        calib_stop.clicked.connect(self._stop_robot_calibration)
-        lay.addWidget(group('2. Kalibrace báze – metoda B',
-            explanation('Robot projede importované kloubové konfigurace. U každé uložíme příkazové úhly a surové měření Leica do samostatné tabulky. Výpočet transformace proběhne offline.'),
-            self.calib_info, self.calib_progress, calib_start, calib_stop))
-        lay.addWidget(group('3. Offline zpracování', explanation(
-            'Výstup: tabulka robot_base_calibration_points; každá série má calibration_id. '
-            'Záznamy obsahují požadované, nikoliv nezávisle změřené kloubové úhly.' )))
+                            explanation("Ukládají se přímo distance, angle Hz a angle Vt z Leica. Převod souřadnic až při postprocessingu.")))
         lay.addStretch()
         return page
 
@@ -675,46 +685,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "STOP odmítnut", message)
         self._update_stop_button()
 
-    def _start_robot_calibration(self):
-        if not self.calibration_csv:
-            QMessageBox.warning(self, 'Kalibrace', 'Nejprve vyber samostatné kalibrační CSV.')
-            return
-        answer = QMessageBox.question(self, 'Kalibrace báze',
-            f'Spustit kalibrační pohyby ze souboru {self.calibration_csv}? Robot se začne pohybovat. '
-            'Zkontroluj limity, trajektorii a bezpečnost pracoviště.',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if answer != QMessageBox.Yes:
-            return
-        try:
-            if self.calib_robot_name.currentText() != load_profiles()["selected_robot"]:
-                raise ValueError("Kalibrace vyžaduje aktivního robota ze záložky Nastavení")
-            self.ros.start_robot_calibration(self.calibration_csv, self.calib_robot_name.currentText(), self.calib_series_name.text())
-            self.calib_info.setText('Odesílám požadavek na kalibraci…')
-        except Exception as exc:
-            QMessageBox.warning(self, 'Kalibrace', str(exc))
-
-    def _stop_robot_calibration(self):
-        try:
-            self.ros.stop_robot_calibration()
-            self.calib_info.setText('Požaduji zastavení kalibrace…')
-        except Exception as exc:
-            QMessageBox.warning(self, 'Zastavení kalibrace', str(exc))
-
-    def _on_calibration_result(self, success, message):
-        self.calib_info.setText(('Kalibrace přijata: ' if success else 'Kalibrace odmítnuta: ') + message)
-
-    def _on_calibration_stop_result(self, success, message):
-        self.calib_info.setText(('STOP přijat: ' if success else 'STOP odmítnut: ') + message)
-
-    def _on_calibration_status(self, data):
-        state = str(data.get('state', '?'))
-        done = int(data.get('completed', 0))
-        total = int(data.get('total', 0))
-        self.calib_progress.setRange(0, max(total, 1))
-        self.calib_progress.setValue(min(done, max(total, 1)))
-        self.calib_info.setText(f'{state} – {done}/{total} – {data.get("message", "")} '
-                                f' (série {data.get("calibration_id", "")})')
-
     def _start_measurement(self):
         if not self.start_button.isEnabled():
             return
@@ -790,8 +760,11 @@ class MainWindow(QMainWindow):
         self._module_timer.stop()
         if self._leica_publisher is not None and self._leica_publisher.state() != QProcess.NotRunning:
             self._leica_stopping = True
-            self._leica_publisher.terminate()
-            self._leica_publisher.waitForFinished(1500)
+            if self._leica_stop_dir is not None:
+                (Path(self._leica_stop_dir.name) / "stop").touch()
+            else:
+                self._leica_publisher.terminate()
+            self._leica_publisher.waitForFinished(4500)
             if self._leica_publisher.state() != QProcess.NotRunning:
                 QMessageBox.warning(self, "Leica stále běží", "Publisher se nepodařilo ukončit. Zkontroluj jej v terminálu.")
                 event.ignore()
@@ -806,20 +779,6 @@ class MainWindow(QMainWindow):
                     return
         self.ros.close()
         event.accept()
-
-    def _load_calibration_csv(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Kalibrace B – CSV", "", "CSV (*.csv)")
-        if not filename:
-            return
-        try:
-            from measurement_system.measurement.position_importer import load_positions
-            positions, point_ids = load_positions(filename)
-            if len(positions) < 3:
-                raise ValueError("Kalibrace B vyžaduje alespoň 3 polohy")
-            self.calibration_csv = filename
-            self.calibration_csv_label.setText(f"{filename} ({len(positions)} bodů)")
-        except Exception as exc:
-            QMessageBox.warning(self, "Chybné kalibrační CSV", str(exc))
 
     def _create_table_series(self):
         if self._sequence_running():
@@ -865,18 +824,15 @@ class MainWindow(QMainWindow):
         if not data.get("success"):
             self.table_calibration_status.setText(data.get("message", "Chyba Leica"))
             return
-        import math
-        d, h, v = data["distance"], data["hz"], data["vt"]
-        # Expected Leica convention: Hz and Vt angles in radians, Vt is zenith angle.
-        # Validate this against the actual tracker protocol before applying transform.
-        x = d * math.sin(v) * math.cos(h)
-        y = d * math.sin(v) * math.sin(h)
-        z = d * math.cos(v)
-        for col, value in enumerate((x, y, z), 1):
-            self.table_calibration.setItem(self._table_next, col, QTableWidgetItem(f"{value:.6f}"))
+        # Display raw Leica spherical readings without conversion to XYZ.
+        values = (data["distance"], data["hz"], data["vt"])
+        for col, value in enumerate(values, 1):
+            self.table_calibration.setItem(
+                self._table_next, col, QTableWidgetItem(f"{float(value):.6f}")
+            )
         self._table_next += 1
         self.table_calibration_status.setText(
-            f"Uloženo do DB (ID bodu {data.get('point_id')}, série {self.table_series_id.value()}); hotovo {self._table_next}/3; Leica spherical conversion assumes radians / zenith angle. "
+            f"Uloženo do DB (ID bodu {data.get('point_id')}, série {self.table_series_id.value()}); hotovo {self._table_next}/3; zobrazeny surové údaje Leica. "
             + (f"Další P{self._table_next+1}" if self._table_next < 3 else "Všechny body hotové"))
 
     def _manual_page(self):
@@ -953,7 +909,7 @@ class MainWindow(QMainWindow):
     def _export(self):
         page, lay = self._page("Export surových záznamů z PostgreSQL; výpočty citlivosti zůstávají mimo aplikaci.")
         self.export_table_select = QComboBox()
-        self.export_table_select.addItems(["measurement_data", "table_calibration_points", "robot_base_calibration_points", "robot_base_calibration_runs"])
+        self.export_table_select.addItems(["measurement_data", "measurements", "robots", "table_calibration_points", "robot_base_calibration_points", "robot_base_calibration_runs"])
         lay.addWidget(group("Databázová tabulka", self.export_table_select))
         buttons = QHBoxLayout()
         self.btn_csv = QPushButton("Export do CSV")
@@ -966,15 +922,15 @@ class MainWindow(QMainWindow):
         self.export_status = QLabel("Připraveno. Připojení k databázi proběhne až po kliknutí.")
         self.export_status.setWordWrap(True)
         lay.addWidget(self.export_status)
-        lay.addWidget(explanation("PostgreSQL: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD (nebo ~/.pgpass). Exportuje se celá zvolená tabulka."))
+        lay.addWidget(explanation("CSV exportuje vybranou tabulku. HDF5 exportuje všechny měřicí série, roboty a kalibrace hierarchicky do jednoho souboru. Připojení používá údaje ze záložky Nastavení."))
         lay.addStretch()
         return page
 
     def _start_export(self, fmt):
-        table = self.export_table_select.currentText()
+        table = self.export_table_select.currentText() if fmt == "csv" else "all"
         ext = ".csv" if fmt == "csv" else ".h5"
         filter_name = "CSV (*.csv)" if fmt == "csv" else "HDF5 (*.h5)"
-        path, _ = QFileDialog.getSaveFileName(self, "Uložit měření", f"{table}{ext}", filter_name)
+        path, _ = QFileDialog.getSaveFileName(self, "Uložit měření", f"{table if fmt == 'csv' else 'diplomka_complete'}{ext}", filter_name)
         if not path:
             return
         if not path.lower().endswith(ext):
@@ -1028,7 +984,7 @@ class MainWindow(QMainWindow):
         save_btn.clicked.connect(self._save_pg_settings)
         lay.addWidget(test_btn)
         lay.addWidget(save_btn)
-        self.pg_status = QLabel("Pro použití změn restartuj databázový i kalibrační uzel.")
+        self.pg_status = QLabel("Pro použití změn restartuj příslušné uzly.")
         self.pg_status.setWordWrap(True)
         lay.addWidget(self.pg_status)
 
@@ -1054,6 +1010,12 @@ class MainWindow(QMainWindow):
         buttons.addWidget(save_robot_btn)
         robot_form.addRow(buttons)
         lay.addWidget(group("Robot / připojení KUKA", robot_form))
+        self.robot_profile_status = QLabel(
+            ("Robotické profily se načítají z PostgreSQL." if not profiles.get("database_error")
+             else "Robotické profily nejsou dostupné – PostgreSQL: " + profiles["database_error"])
+        )
+        self.robot_profile_status.setWordWrap(True)
+        lay.addWidget(self.robot_profile_status)
         self._robot_profile_changed(self.robot_list.currentText())
 
         leica = profiles["leica"]
@@ -1066,6 +1028,18 @@ class MainWindow(QMainWindow):
         leica_form.addRow("EtherCAT rozhraní", self.leica_interface)
         leica_form.addRow("ZMQ TCP host", self.leica_host)
         leica_form.addRow("ZMQ TCP port", self.leica_port)
+        self.leica_distance_unit = QComboBox()
+        self.leica_distance_unit.addItems(["mm", "m"])
+        self.leica_distance_unit.setCurrentText(leica.get("distance_unit", "mm"))
+        leica_form.addRow("Jednotka vzdálenosti Leica", self.leica_distance_unit)
+        self.leica_angle_unit = QComboBox()
+        self.leica_angle_unit.addItems(["rad", "deg", "gon"])
+        self.leica_angle_unit.setCurrentText(leica.get("angle_unit", "rad"))
+        leica_form.addRow("Jednotka úhlů Leica", self.leica_angle_unit)
+        self.leica_vertical_angle = QComboBox()
+        self.leica_vertical_angle.addItems(["zenith", "elevation"])
+        self.leica_vertical_angle.setCurrentText(leica.get("vertical_convention", "zenith"))
+        leica_form.addRow("Vertikální úhel", self.leica_vertical_angle)
         save_leica_btn = QPushButton("Uložit Leica")
         save_leica_btn.clicked.connect(self._save_leica)
         leica_form.addRow(save_leica_btn)
@@ -1075,13 +1049,21 @@ class MainWindow(QMainWindow):
         return page
 
     def _robot_profile_changed(self, name):
-        item = next((x for x in load_profiles()["robots"] if x["name"] == name), None)
-        if item is not None:
-            self.robot_host.setText(item["host"])
-            self.robot_port.setValue(int(item["port"]))
+        if not name:
+            self.robot_host.clear()
+            self.robot_port.setValue(30001)
+            return
+        try:
+            profiles = load_profiles()
+            item = next((x for x in profiles["robots"] if x["name"] == name), None)
+            if item is not None:
+                self.robot_host.setText(item.get("host", ""))
+                self.robot_port.setValue(int(item.get("port", 30001)))
+        except Exception as exc:
+            self.pg_status.setText("Robotické profily nelze načíst z PostgreSQL: " + str(exc))
 
     def _sync_robot_selectors(self, names, chosen):
-        for key in ("robot_name_edit", "table_robot_name", "calib_robot_name"):
+        for key in ("robot_name_edit", "table_robot_name"):
             editor = getattr(self, key, None)
             if editor is not None:
                 editor.blockSignals(True)
@@ -1090,21 +1072,45 @@ class MainWindow(QMainWindow):
                 editor.setCurrentText(chosen)
                 editor.blockSignals(False)
 
+    def _reload_robot_profiles(self, chosen=None):
+        profiles = load_profiles()
+        names = [x["name"] for x in profiles["robots"]]
+        selected = chosen or profiles.get("selected_robot", "")
+        self.robot_list.blockSignals(True)
+        self.robot_list.clear()
+        self.robot_list.addItems(names)
+        self.robot_list.setCurrentText(selected)
+        self.robot_list.blockSignals(False)
+        self._sync_robot_selectors(names, selected)
+        self._robot_profile_changed(selected)
+        if hasattr(self, "robot_profile_status"):
+            self.robot_profile_status.setText(
+                f"{len(names)} robot(ů) načteno z PostgreSQL."
+                if names else "V PostgreSQL zatím není uložen žádný robot."
+            )
+
     def _add_robot(self):
         name, accepted = QInputDialog.getText(self, "Nový robot", "Název / typ robota:")
         name = name.strip()
         if not accepted or not name:
             return
-        data = load_profiles()
-        if any(x["name"] == name for x in data["robots"]):
-            QMessageBox.warning(self, "Robot", "Robot s tímto názvem už existuje.")
-            return
-        data["robots"].append({"name": name, "host": "172.31.1.147", "port": 30001})
-        data["selected_robot"] = name
-        save_profiles(data)
-        self.robot_list.addItem(name)
-        self.robot_list.setCurrentText(name)
-        self._sync_robot_selectors([x["name"] for x in data["robots"]], name)
+        host = self.robot_host.text().strip() or "172.31.1.147"
+        port = self.robot_port.value()
+        try:
+            conn = connect_with_settings()
+            try:
+                add_robot(conn, name, host, port, robot_type=name)
+                # Newly added robot becomes the active profile in PostgreSQL.
+                from measurement_system.drivers.db_setup.robot_registry import select_robot
+                select_robot(conn, name)
+            finally:
+                conn.close()
+            self._reload_robot_profiles(name)
+            QMessageBox.information(self, "Robot", f"Robot '{name}' byl uložen do PostgreSQL.")
+        except Exception as exc:
+            QMessageBox.warning(self, "Robot nebyl přidán",
+                "Robota se nepodařilo uložit do PostgreSQL. Zkontroluj připojení v Nastavení.\n\n" + str(exc))
+            self._select(PAGES.index("Nastavení"))
 
     def _save_robot(self):
         name = self.robot_list.currentText()
@@ -1112,15 +1118,17 @@ class MainWindow(QMainWindow):
         if not name or not host:
             QMessageBox.warning(self, "Robot", "Zadej robota a IP/hostname.")
             return
-        data = load_profiles()
-        item = next((x for x in data["robots"] if x["name"] == name), None)
-        if item is None:
-            return
-        item.update(host=host, port=self.robot_port.value())
-        data["selected_robot"] = name
-        save_profiles(data)
-        self._sync_robot_selectors([x["name"] for x in data["robots"]], name)
-        QMessageBox.information(self, "Robot", "Uloženo. Před připojením restartuj robot_node.")
+        try:
+            conn = connect_with_settings()
+            try:
+                update_robot(conn, name, host, self.robot_port.value(), robot_type=name, select=True)
+            finally:
+                conn.close()
+            self._reload_robot_profiles(name)
+            QMessageBox.information(self, "Robot", "Profil robota byl uložen přímo v PostgreSQL. Před připojením restartuj robot_node.")
+        except Exception as exc:
+            QMessageBox.warning(self, "Robot", "Profil robota se nepodařilo uložit do PostgreSQL:\n" + str(exc))
+            self._select(PAGES.index("Nastavení"))
 
     def _save_leica(self):
         host = self.leica_host.text().strip()
@@ -1129,7 +1137,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Leica", "Vyplň ZMQ host a EtherCAT rozhraní.")
             return
         data = load_profiles()
-        data["leica"] = {"host": host, "port": self.leica_port.value(), "interface": interface}
+        data["leica"] = {
+            "host": host, "port": self.leica_port.value(), "interface": interface,
+            "distance_unit": self.leica_distance_unit.currentText(),
+            "angle_unit": self.leica_angle_unit.currentText(),
+            "vertical_convention": self.leica_vertical_angle.currentText(),
+        }
         save_profiles(data)
         QMessageBox.information(self, "Leica", "Uloženo. Restartuj publisher a databázový uzel.")
 
@@ -1153,7 +1166,7 @@ class MainWindow(QMainWindow):
         try:
             save_settings(self._pg_values())
             self.pg_status.setText(
-                "Nastavení uloženo. Restartuj database_node a robot_calibration_node, "
+                "Nastavení uloženo. Restartuj database_node, "
                 "případně UI kvůli exportu."
             )
         except Exception as exc:

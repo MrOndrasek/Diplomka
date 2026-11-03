@@ -11,6 +11,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/MoveRobot.srv"
   "srv/SaveMeasurement.srv"
   "srv/GetRobotJoints.srv"
+  "srv/GetRobotPose.srv"
+  "srv/SaveBasePoint.srv"
   "srv/ReadLeica.srv"
   "srv/SaveTablePoint.srv"
   "srv/CreateMeasurement.srv"

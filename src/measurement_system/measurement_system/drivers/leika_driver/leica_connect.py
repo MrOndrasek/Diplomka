@@ -17,11 +17,14 @@ class Connection:
         self.sock = self.ctx.socket(zmq.PUB)
         self.sock.bind(f"tcp://*:{int(zmq_port)}")
 
-    def run(self):
+    def run(self, stop_file=None):
         self._master.open(self.port)
         self._master.config_init()
         if len(self._master.slaves) == 0:
-            print("No slaves found")
+            self._master.close()
+            self.sock.close()
+            self.ctx.term()
+            raise RuntimeError("No EtherCAT slaves found")
         elif len(self._master.slaves) > 0:
             self._master.config_init()
             self._master.config_map()
@@ -34,7 +37,7 @@ class Connection:
 
             self._master.state_check(pysoem.OP_STATE, 50000)
             try:
-                while True:
+                while not (stop_file and Path(stop_file).exists()):
                     print(f"Slave: {self._master.slaves[0].name}")
                     self.timestamp=time.time_ns()
                     self._master.send_processdata()
@@ -55,8 +58,19 @@ class Connection:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stop-file", default=None)
+    parser.add_argument("--interface", default=None)
+    parser.add_argument("--zmq-port", type=int, default=None)
+    args = parser.parse_args()
     try:
-        cfg = load_profiles()["leica"]
-        Connection(cfg["interface"], cfg["port"]).run()
+        # CLI overrides are required for pkexec: root has a DIFFERENT HOME and
+        # therefore cannot read the ordinary user's leica.json settings.
+        cfg = load_profiles()["leica"] if (args.interface is None or args.zmq_port is None) else {}
+        interface = args.interface or cfg["interface"]
+        zmq_port = args.zmq_port if args.zmq_port is not None else cfg["port"]
+        Connection(interface, zmq_port).run(stop_file=args.stop_file)
     except Exception as e:
-        print(f"Leica error: {e}")
+        print(f"Leica error: {e}", flush=True)
+        raise SystemExit(1)

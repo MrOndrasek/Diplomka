@@ -14,6 +14,8 @@ class DatabaseNode(Node):
         self.conn = self.get_connection()
         if self.conn is None:
             raise RuntimeError("PostgreSQL unavailable; database_node will not start. Open Settings in the UI.")
+        # Initialize all tables/migrations once before advertising ROS2 services.
+        ensure_measurement_tables(self.conn)
         self.leika = Leika_ZMQ_driver()
         self.leika.connection()
         from measurement_system.connection_profiles import leica_endpoint
@@ -52,13 +54,11 @@ class DatabaseNode(Node):
                 raise RuntimeError("Database is disconnected")
             if not request.robot_name.strip() or not request.measurement_name.strip():
                 raise ValueError("Robot and measurement name are mandatory")
-            ensure_measurement_tables(self.conn)
             with self.conn.cursor() as cur:
                 cur.execute("SELECT id FROM robots WHERE robot_name=%s ORDER BY id LIMIT 1", (request.robot_name.strip(),))
                 row = cur.fetchone()
                 if row is None:
-                    cur.execute("INSERT INTO robots(robot_name) VALUES (%s) RETURNING id", (request.robot_name.strip(),))
-                    row = cur.fetchone()
+                    raise ValueError("Robot is not registered in PostgreSQL. Add it in Settings first.")
                 cur.execute("INSERT INTO measurements(robot_id,name) VALUES (%s,%s) RETURNING id",
                             (row[0], request.measurement_name.strip()))
                 response.measurement_id = int(cur.fetchone()[0])
@@ -98,7 +98,6 @@ class DatabaseNode(Node):
                 raise RuntimeError("Database is disconnected")
             if request.measurement_id <= 0 or request.point_number not in (1, 2, 3):
                 raise ValueError("Valid measurement_id and point_number 1..3 required")
-            ensure_measurement_tables(self.conn)
             with self.conn.cursor() as cur:
                 cur.execute("SELECT id FROM measurements WHERE id=%s", (request.measurement_id,))
                 if cur.fetchone() is None:
@@ -139,11 +138,10 @@ class DatabaseNode(Node):
             self.get_logger().error(f"Table point save failed: {exc}")
         return response
 
-    def read_tracker(self, joints, measurement_id):
+    def read_tracker(self, joints, wanted_joints, measurement_id):
         """Acquire one new sample and commit it before returning success."""
         if self.conn is None or self.conn.closed:
             raise RuntimeError("Database is disconnected")
-        ensure_measurement_tables(self.conn)
         self.get_logger().info("Waiting for fresh Leica ZMQ measurement")
         timestamp, distance, angle_hz, angle_vt = self.leika.measure_point()
         self.get_logger().info(f"Leica sample received: timestamp={timestamp}, distance={distance}")
@@ -152,9 +150,14 @@ class DatabaseNode(Node):
                 cur.execute("""
                     INSERT INTO measurement_data
                     (measurement_id, distance, angleHz, angleVt, time_of_meas,
-                     q1, q2, q3, q4, q5, q6, q7)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (measurement_id, distance, angle_hz, angle_vt, timestamp, *joints))
+                     q1_indicated, q2_indicated, q3_indicated, q4_indicated,
+                     q5_indicated, q6_indicated, q7_indicated,
+                     q1_wanted, q2_wanted, q3_wanted, q4_wanted,
+                     q5_wanted, q6_wanted, q7_wanted)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (measurement_id, distance, angle_hz, angle_vt, timestamp,
+                       *joints, *wanted_joints))
             self.conn.commit()
             self.get_logger().info("Leica measurement committed to PostgreSQL")
             return True
@@ -168,7 +171,7 @@ class DatabaseNode(Node):
             try:
                 if self.conn is None or self.conn.closed:
                     raise RuntimeError("Database is disconnected")
-                ensure_measurement_tables(self.conn)
+                # Schema was already prepared during DatabaseNode initialization.
                 response.success = True
                 response.message = "PostgreSQL measurement tables ready"
                 self.get_logger().info(response.message)
@@ -181,12 +184,16 @@ class DatabaseNode(Node):
             response.success = False
             response.message = "Exactly seven joint angles are required"
             return response
+        if len(request.wanted_joints) != 7:
+            response.success = False
+            response.message = "Exactly seven wanted joint angles are required"
+            return response
         if request.measurement_id <= 0:
             response.success = False
             response.message = "A valid measurement_id is required"
             return response
         try:
-            self.read_tracker(list(request.joints), request.measurement_id)
+            self.read_tracker(list(request.joints), list(request.wanted_joints), request.measurement_id)
             response.success = True
             response.message = "Measurement committed to PostgreSQL"
         except Exception as exc:

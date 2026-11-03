@@ -11,36 +11,12 @@ def main():
 
 
 def create_table():
-    print("created")
-    cur = conn.cursor()
-    cur.execute("""CREATE TABLE IF NOT EXISTS robots (
-        id SERIAL PRIMARY KEY,
-        robot_name TEXT NOT NULL
-        )""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS measurements (
-        id SERIAL PRIMARY KEY,
-        robot_id INTEGER REFERENCES robots(id),
-        time_of_measuring TIMESTAMP DEFAULT NOW(),
-        name TEXT NOT NULL
-        )""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS measurement_data (
-        id SERIAL PRIMARY KEY,
-        measurement_id INTEGER REFERENCES measurements(id),
-        time_of_meas BIGINT,
-        distance DOUBLE PRECISION,
-        angleHz DOUBLE PRECISION,
-        angleVt DOUBLE PRECISION,
-        q1 DOUBLE PRECISION,
-        q2 DOUBLE PRECISION,
-        q3 DOUBLE PRECISION,
-        q4 DOUBLE PRECISION,
-        q5 DOUBLE PRECISION,
-        q6 DOUBLE PRECISION,
-        q7 DOUBLE PRECISION
-        )""")
-    
-    cur.close()
-    conn.commit()
+    """Backward compatible entry-point; DDL is centralized in schema.py."""
+    from measurement_system.drivers.db_setup.schema import ensure_measurement_tables
+    connection = globals().get("conn")
+    if connection is None or connection is False:
+        raise RuntimeError("Database connection unavailable")
+    ensure_measurement_tables(connection)
 
 
 def get_connection():
