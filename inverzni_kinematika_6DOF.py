@@ -282,7 +282,7 @@ def ball_movements(number_of_points,number_of_support_points):
             [-1,0,0],
             [0,0,1],
             [0,1,0]
-        ])
+        ]) @ np.diag([-1,1,-1])
 
     R_fix = np.array([
             [0,-1,0],
@@ -365,23 +365,125 @@ def export_positions_to_csv(positions, filename="positions.csv"):
 
     print(f"Pozice uloženy do {filename}")
    
+def fibonacci_sphere(center, radius, number_of_points):
 
+    points = []
 
+    golden_angle = math.pi * (3 - math.sqrt(5))
 
-q_0 = np.radians([
+    for i in range(number_of_points):
+
+        z = 1 - 2 * (i + 0.5) / number_of_points
+
+        radial = math.sqrt(1 - z**2)
+
+        azimut = golden_angle * i
+
+        x = radial * math.cos(azimut)
+        y = radial * math.sin(azimut)
+
+        point = center + radius * np.array([x, y, z])
+
+        points.append(point)
+
+    return points
+
+def ball_movements_targeted(number_of_points=9,number_of_support_points=100):
+    R_cil = np.array([
+            [-1,0,0],
+            [0,0,1],
+            [0,1,0]
+        ]) @ np.diag([-1,1,-1])
+
+    R_fix = np.array([
+            [0,-1,0],
+            [1, 0,0],
+            [0, 0,1]
+        ])
+    R_cil_model = R_cil @ R_fix.T 
+    list_of_motions=[]
+
+    p_cil_center=[
+                np.array([500,-550,800]),
+                np.array([350,-550,800]),
+                np.array([200,-550,800]),
+                np.array([500,-550,600]),
+                np.array([350,-550,600]),
+                np.array([200,-550,600]),
+                np.array([500,-550,400]),
+                np.array([350,-550,400]),
+                np.array([200,-550,400])
+                               ]
+    point_number=0
+    while point_number<number_of_points:
+        q_0 = np.radians([
                 [5],
                 [90],
                 [5],
                 [5],
                 [5],
                 [5]
+                ])  
+        
+        print(p_cil_center[point_number])
+        
+        result_center=joint_calculation(p_cil_center[point_number],R_cil_model,q_0,6000,0.01)
+        point_id=1
+        if result_center is False:
+            continue
+        else:
+            q_0_center=result_center[1]
+            azimut=0
+            polar_angle=0
+            radius=20
+
+            indicator_hz=0
+            center=p_cil_center[point_number]
+
+            support_points = fibonacci_sphere(
+                center=center,
+                radius=radius,
+                number_of_points=number_of_support_points
+            )
+
+            for p_cil in support_points:
+
+                result_point = joint_calculation(
+                    p_cil,
+                    R_cil_model,
+                    q_0_center.copy(),
+                    6000,
+                    0.01
+                )
+
+                if result_point is False:
+                    print(f"Point calculation failed: {p_cil}")
+                    continue
+
+                q_0 = result_point[1]
+
+                list_of_motions.append([
+                    math.degrees(q_0[0,0]),
+                    math.degrees(q_0[1,0]),
+                    math.degrees(q_0[2,0]),
+                    math.degrees(-q_0[3,0]),
+                    0,
+                    math.degrees(q_0[4,0]),
+                    math.degrees(q_0[5,0])
                 ])
 
+                # Návrat do středu
+                list_of_motions.append([
+                    math.degrees(q_0_center[0,0]),
+                    math.degrees(q_0_center[1,0]),
+                    math.degrees(q_0_center[2,0]),
+                    math.degrees(-q_0_center[3,0]),
+                    0,
+                    math.degrees(q_0_center[4,0]),
+                    math.degrees(q_0_center[5,0])
+                ])
+            point_number+=1
+    
+    export_positions_to_csv(list_of_motions)
 
-R_cil = np.array([
-            [-1,0,0],
-            [0,0,1],
-            [0,1,0]
-        ]) @ np.diag([-1,1,-1])
-
-generation_of_movements(5,q_0,R_cil)
+ball_movements_targeted(9,100)

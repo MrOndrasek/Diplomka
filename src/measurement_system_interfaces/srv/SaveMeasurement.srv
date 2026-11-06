@@ -1,4 +1,5 @@
 float64[] joints
+float64[] wanted_joints
 bool save
 int64 measurement_id
 ---

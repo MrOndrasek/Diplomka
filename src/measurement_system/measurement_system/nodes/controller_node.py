@@ -126,6 +126,7 @@ class MeasurementController(Node):
                 request = SaveMeasurement.Request()
                 request.save = False  # non-measuring preflight, initializes schema
                 request.joints = []
+                request.wanted_joints = []
                 self.future = self.measurement_client.call_async(request)
                 self.wait_since = time.monotonic()
                 self.state = State.WAIT_DB_READY
@@ -220,6 +221,7 @@ class MeasurementController(Node):
                 if self.actual_joints is None or len(self.actual_joints) != 7:
                     raise RuntimeError("No measured KUKA joint positions")
                 request.joints = self.actual_joints
+                request.wanted_joints = [float(q) for q in self.positions[self.position_index]]
                 request.measurement_id = self.measurement_id
                 self.future = self.measurement_client.call_async(request)
                 self.wait_since = time.monotonic()

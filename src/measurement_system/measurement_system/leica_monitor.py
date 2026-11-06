@@ -3,8 +3,8 @@ import time
 import zmq
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
 from rclpy.executors import ExternalShutdownException
+from std_msgs.msg import Bool
 
 
 class LeicaMonitor(Node):
@@ -13,7 +13,8 @@ class LeicaMonitor(Node):
         self.socket = zmq.Context.instance().socket(zmq.SUB)
         self.socket.setsockopt(zmq.SUBSCRIBE, b"")
         self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.connect("tcp://localhost:5555")
+        from measurement_system.connection_profiles import leica_endpoint
+        self.socket.connect(leica_endpoint())
         self.publisher = self.create_publisher(Bool, "/leica/data_available", 10)
         self.last_sample = 0.0
         self.timer = self.create_timer(0.2, self.update)
@@ -36,20 +37,15 @@ class LeicaMonitor(Node):
         return super().destroy_node()
 
 
-
-def main(args=None):
-    rclpy.init(args=args)
+def main():
+    rclpy.init()
     node = LeicaMonitor()
-
     try:
         rclpy.spin(node)
-
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
-
     finally:
         node.destroy_node()
-
         if rclpy.ok():
             rclpy.shutdown()
 

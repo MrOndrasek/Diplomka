@@ -1,0 +1,5 @@
+---
+bool success
+string message
+float64[] xyz_mm
+float64[] joints_deg

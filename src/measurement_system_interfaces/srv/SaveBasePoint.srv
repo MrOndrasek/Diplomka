@@ -1,0 +1,11 @@
+int64 measurement_id
+int32 point_number
+float64[] joints_deg
+int64 timestamp
+float64 distance
+float64 angle_hz
+float64 angle_vt
+---
+bool success
+string message
+string calibration_id

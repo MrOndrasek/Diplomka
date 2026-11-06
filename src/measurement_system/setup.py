@@ -13,7 +13,7 @@ setup(
     ('share/' + package_name + '/launch',
         ['launch/measurement_system.launch.py']),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'numpy'],
     zip_safe=True,
     maintainer='dohnal',
     maintainer_email='medula.dohnal@gmail.com',
@@ -30,7 +30,6 @@ setup(
             "controller_node=measurement_system.nodes.controller_node:main",
             "database_node=measurement_system.nodes.database_node:main",
             "measurement_ui=measurement_system.ui:main",
-            "robot_calibration_node=measurement_system.nodes.robot_calibration_node:main",
 
         ],
     },
