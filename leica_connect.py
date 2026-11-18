@@ -47,6 +47,6 @@ class Connection:
 
 if __name__ == "__main__":
     try:
-        Connection("eno2").run()
+        Connection("eno4").run()
     except:
         print("error")

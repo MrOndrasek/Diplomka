@@ -5,7 +5,7 @@ import os
 import binascii
 import zmq
 
-IFNAME = "eno2"
+IFNAME = "eno4"
 master = pysoem.Master()
 master.open(IFNAME)
 master.config_init()
