@@ -13,7 +13,7 @@ import sys
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
 import shutil
-from measurement_system.UI.ros_bridge import RosBridge
+from UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from measurement_system.drivers.db_setup.connection_settings import load_settings, save_settings, connect_with_settings
 from measurement_system.connection_profiles import load_profiles, save_profiles, selected_robot, leica_endpoint
