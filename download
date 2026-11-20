@@ -1,0 +1,17 @@
+.git
+**/__pycache__/
+**/.pytest_cache/
+build/
+install/
+log/
+*.h5
+*.hdf5
+*.csv
+*.db
+*.sqlite3
+**/calibration/**
+**/kalibrace/**
+**/*inverzni_kinematika*
+**/*inverse_kinematics*
+**/leica_driver/**
+**/*leica_driver*

@@ -1,6 +1,9 @@
 import math
 import numpy as np
 import h5py
+from pymoo.core.problem import ElementwiseProblem
+from pymoo.algorithms.soo.nonconvex.de import DE
+from pymoo.optimize import minimize
 
 with h5py.File("diplomka_complete.h5","r") as f:
     measurement=f["measurements/measurement_4"]
@@ -26,8 +29,8 @@ def leika_measurement_to_coordinates(i):
     x=distance_in_mm*math.sin(angle_vt)*math.cos(angle_hz)
     y=distance_in_mm*math.sin(angle_vt)*math.sin(angle_hz)
     z=distance_in_mm*math.cos(angle_vt)
-
-    p=np.array([x,y,z])
+    #musime invertovat osu y 
+    p=np.array([x,-y,z])
     return p
 
 def robot_measurement_to_coordinates(i): #q je list o delce 7 s natocenim kloubu ve stupnich, vyhodi polohu koncoveho efektoru a seznam matic pro IK
@@ -326,19 +329,19 @@ def least_square_method(robot_points_list,leika_points_list):
     transformed_point=(R @ robot_points.T).T + t
     errors=np.linalg.norm(leika_points-transformed_point,axis=1)
     RMSE=np.sqrt(np.mean(errors**2))
-    print("matice R:",R,"tranformace:",t)
-    print("RMSE:",RMSE,"mm")
+    """ print("matice R:",R,"tranformace:",t)
+    print("RMSE:",RMSE,"mm")"""
     return R,t
 
 
 def robot_dimensions(q_in,dimensions_delta): 
     q=np.radians(q_in)
-    theta1=q[0]
-    theta2=-q[1]
-    theta3=-q[2]
-    theta4=-q[3]
+    theta1=q[0]+dimensions_delta[4]
+    theta2=-q[1]+dimensions_delta[5]
+    theta3=-q[2]+dimensions_delta[6]
+    theta4=-q[3]+dimensions_delta[7]
     theta5=q[4]
-    theta6=-q[5]
+    theta6=-q[5]+dimensions_delta[8]
     theta7=-q[6]
     #rotační matice
 
@@ -377,15 +380,15 @@ def robot_dimensions(q_in,dimensions_delta):
     #rozmery mechanismu(pozdeji upravit)
     
     v1=360+dimensions_delta[0]
-    v2=0+dimensions_delta[1]
-    v3=420+dimensions_delta[2]
-    v4=0+dimensions_delta[3]
-    v5=400+dimensions_delta[4]
-    v6=0+dimensions_delta[5]
-    v7=126+dimensions_delta[6]
-    h1=0+dimensions_delta[7]
-    h2=0+dimensions_delta[8]
-    h3=0+dimensions_delta[9]
+    v2=0
+    v3=420+dimensions_delta[1]
+    v4=0
+    v5=400+dimensions_delta[2]
+    v6=0
+    v7=126+51+dimensions_delta[3]
+    h1=0
+    h2=0
+    h3=0
 
     #transformační matice
     T01=np.array([[R01[0, 0],R01[0, 1],R01[0, 2],0]
@@ -439,15 +442,70 @@ def robot_dimensions(q_in,dimensions_delta):
     p_E=T_mat_list[7][:3,3]
     return p_E
 
-def objective(delta,R,t):
+def objective(x):
     q=q_wanted
-    measured=R*measurement_points_lists(0,1800)[1]+t
-    predicted=np.array([
-        robot_dimensions(qi,delta) for qi in q
+    valid=distance>0
+
+    list_of_points=measurement_points_lists(0,1800)
+    transformation=least_square_method(list_of_points[0],list_of_points[1])
+
+    dv1,dv3,dv5,dv7,dq1,dq2,dq3,dq4,dq6=x
+
+    delta=np.array([
+        dv1,dv3,dv5,dv7,dq1,dq2,dq3,dq4,dq6
     ])
 
+    measured=measurement_points_lists(0,1800)[1]
+    predicted=np.array([
+        robot_dimensions(qi,delta) for qi in q[valid]
+    ])
+    predicted=predicted@ transformation[0].T+transformation[1]
     return np.sqrt(np.mean(np.sum((predicted-measured)**2,axis=1)))
+
+class RobotCalibration(ElementwiseProblem):
+    def __init__(self, elementwise=True, **kwargs):
+        super().__init__(n_var=9,n_obj=1, xl=np.array([-5.0,-5.0,-5.0,-5.0,-0.0175,-0.0175,-0.0175,-0.0175,-0.0175]),xu=np.array([5.0,5.0,5.0,5.0,0.0175,0.0175,0.0175,0.0175,0.0175]))
+    def _evaluate(self, x,out, *args, **kwargs):
+        out["F"]=objective(x)
+
     
-    
-list_of_points=measurement_points_lists(0,1800)
-transformation=least_square_method(list_of_points[0],list_of_points[1])
+problem=RobotCalibration()
+
+algorithm = DE(
+    pop_size=60,
+    variant="DE/rand/1/bin",
+    CR=0.9,
+    F=0.8
+)
+
+print("Počáteční RMSE:", objective(np.zeros(9)))
+
+print("n_var:", problem.n_var)
+print("n_obj:", problem.n_obj)
+print("xl:", problem.xl)
+print("xu:", problem.xu)
+
+print("Test objective:", objective(np.zeros(9)))
+
+out = {}
+problem._evaluate(np.zeros(9), out)
+print("Test evaluate:", out)
+
+result=minimize(
+    problem,
+    algorithm,
+    termination=("n_gen",500),
+    seed=1,
+    verboe=True
+)
+
+print("\nPůvodní RMSE:", objective(np.zeros(9)), "mm")
+print("Optimalizované RMSE:", float(result.F[0]), "mm")
+
+names = ["v1", "v3", "v5", "v7", "q1", "q2", "q3", "q4", "q6"]
+
+for name, correction in zip(names, result.X):
+    if name.startswith("q"):
+        print(f"{name}: {np.degrees(correction):+.6f}°")
+    else:
+        print(f"{name}: {correction:+.6f} mm")

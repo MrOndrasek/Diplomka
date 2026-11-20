@@ -62,7 +62,7 @@ class Leika_ZMQ_driver:
                              f'{len(timestamp_data)}, {len(data)}')
         timestamp = int.from_bytes(timestamp_data, 'little')
         distance = struct.unpack_from('<d', data, 20)[0]
-        angle_hz = struct.unpack_from('<d', data, 12)[0]
-        angle_vt = struct.unpack_from('<d', data, 4)[0]
+        angle_hz = struct.unpack_from('<d', data, 4)[0]
+        angle_vt = struct.unpack_from('<d', data, 12)[0]
         self.logger.info('Leica sample received in %.3fs', time.monotonic()-started)
         return timestamp, distance, angle_hz, angle_vt

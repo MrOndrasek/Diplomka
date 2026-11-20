@@ -1,0 +1,21 @@
+services:
+  measurement_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: klauda/measurement-app:jazzy
+    # Linux host networking: external Leica ZMQ driver can remain on tcp://127.0.0.1:5555
+    network_mode: host
+    ipc: host
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}
+      LEICA_ZMQ_URL: ${LEICA_ZMQ_URL:-tcp://127.0.0.1:5555}
+      # Set to the real package/launch combination in your ROS2 repository:
+      APP_LAUNCH_PACKAGE: ${APP_LAUNCH_PACKAGE:-}
+      APP_LAUNCH_FILE: ${APP_LAUNCH_FILE:-}
+      # Optional: if not using a launch file, provide an explicit shell command
+      APP_COMMAND: ${APP_COMMAND:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
