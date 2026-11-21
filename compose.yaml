@@ -5,8 +5,6 @@ services:
       dockerfile: Dockerfile
     image: klauda/measurement-app:jazzy
     # Linux host networking: external Leica ZMQ driver can remain on tcp://127.0.0.1:5555
-    network_mode: host
-    ipc: host
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}
@@ -19,3 +17,15 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+    networks:
+      diplomka-net:
+        ipv4_address:10.10.0.2
+
+networks:
+  diplomka-net:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24

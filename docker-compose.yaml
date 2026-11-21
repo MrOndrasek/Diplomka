@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:18.2
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=dohnaon1
       - POSTGRES_PASSWORD=1234
@@ -10,11 +10,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     restart: unless-stopped
+    networks:
+      diplomka-net:
+        ipv4_address:10.10.0.3
   
   pgadmin:
     image: dpage/pgadmin4:9.12
     ports:
-      - 5050:80
+      - 127.0.0.1:5050:80
     environment:
        PGADMIN_DEFAULT_EMAIL: demo@example.com
        PGADMIN_DEFAULT_PASSWORD: secret
@@ -23,6 +26,13 @@ services:
 
        PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
        restart: unless-stopped
+  
 
 volumes:
   postgres_data:
+    external: true
+    name: NAZEV_EXISTUJICIHO_VOLUME
+
+networks:
+  diplomka-net:
+    external: true

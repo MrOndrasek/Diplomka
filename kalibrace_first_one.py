@@ -309,6 +309,7 @@ def robot_base_method_one(T1_index,T2_index,T3_index):
 def least_square_method(robot_points_list,leika_points_list):
     robot_points=np.array(robot_points_list)
     leika_points=np.array(leika_points_list)
+    
     robot_schwerpunkt=np.mean(robot_points_list,axis=0)
 
     leika_schwerpunkt=np.mean(leika_points_list,axis=0)

@@ -7,7 +7,7 @@ import zmq
 
 
 class Leika_ZMQ_driver:
-    def __init__(self, endpoint='tcp://127.0.0.1:5555', timeout_ms=10000):
+    def __init__(self, endpoint='tcp://10.10.0.2:5555', timeout_ms=10000):
         self.ctx = None
         self.sock = None
         self.endpoint = endpoint
@@ -21,7 +21,7 @@ class Leika_ZMQ_driver:
         self.sock = self.ctx.socket(zmq.SUB)
         self.sock.setsockopt(zmq.SUBSCRIBE, b'')
         self.sock.setsockopt(zmq.LINGER, 0)
-        self.sock.connect(self.endpoint)
+        self.sock.bind(self.endpoint)
         self.logger.info('Leica ZMQ SUB connected to %s (waiting for publisher)', self.endpoint)
 
     def end_connection(self):
