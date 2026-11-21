@@ -4,6 +4,11 @@ import h5py
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.algorithms.soo.nonconvex.de import DE
 from pymoo.optimize import minimize
+import multiprocessing as mp
+from pymoo.parallelization.starmap import StarmapParallelization
+import time
+from pymoo.core.callback import Callback
+
 
 with h5py.File("diplomka_complete.h5","r") as f:
     measurement=f["measurements/measurement_4"]
@@ -336,97 +341,50 @@ def least_square_method(robot_points_list,leika_points_list):
 
 
 def robot_dimensions(q_in,dimensions_delta): 
-    q=np.radians(q_in)
-    theta1=q[0]+dimensions_delta[4]
-    theta2=-q[1]+dimensions_delta[5]
-    theta3=-q[2]+dimensions_delta[6]
-    theta4=-q[3]+dimensions_delta[7]
-    theta5=q[4]
-    theta6=-q[5]+dimensions_delta[8]
-    theta7=-q[6]
-    #rotační matice
+    q = np.radians(np.asarray(q_in).flatten())
+    def Rz(theta):
+        c=np.cos(theta)
+        s=np.sin(theta)
 
-    R01=np.array([[math.cos(theta1),0,math.sin(theta1)],
-             [math.sin(theta1),0,-math.cos(theta1)],
-             [0,1,0]])
+        R=np.array([
+            [c,-s,0],
+            [s,c,0],
+            [0,0,1]
+        ])
+        return R
 
-    R12=np.array([[math.cos(theta2),0,math.sin(theta2)],
-             [math.sin(theta2),0,-math.cos(theta2)],
-             [0,1,0]])
+    def Rx(alpha):
+        c=np.cos(alpha)
+        s=np.sin(alpha)
 
-    R23=np.array([[math.cos(theta3),0,math.sin(theta3)],
-             [math.sin(theta3),0,-math.cos(theta3)],
-             [0,1,0]])
+        R=np.array([
+            [1,0,0],
+            [0,c,-s],
+            [0,s,c]
+        ])
+        return R
 
-    R34=np.array([[math.cos(theta4),0,math.sin(theta4)],
-             [math.sin(theta4),0,-math.cos(theta4)],
-             [0,1,0]])
 
-    R45=np.array([[math.cos(theta5),0,math.sin(theta5)],
-             [math.sin(theta5),0,-math.cos(theta5)],
-             [0,1,0]])
-    
-    R56=np.array([[math.cos(theta6),0,math.sin(theta6)],
-             [math.sin(theta6),0,-math.cos(theta6)],
-             [0,1,0]])
+    def transformation(theta,alpha,d):
+        T=np.eye(4)
 
-    R67=np.array([[math.cos(theta7),math.sin(theta7),0],
-                [math.sin(theta7),-math.cos(theta7),0],
-                [0,0,-1]])
+        T[:3,:3]=Rz(theta)@Rx(alpha)
+        T[:3,3]=[0,0,d]
+        return T
 
-    
-    R07=R01@R12@R23@R34@R45@R56@R67
-    #print(R07,"\n" ,R01,"\n",R12,"\n",R23,"\n",R34,"\n",R45,"\n",R56,"\n",R67)
 
-    #rozmery mechanismu(pozdeji upravit)
-    
     v1=360+dimensions_delta[0]
-    v2=0
     v3=420+dimensions_delta[1]
-    v4=0
     v5=400+dimensions_delta[2]
-    v6=0
     v7=126+51+dimensions_delta[3]
-    h1=0
-    h2=0
-    h3=0
 
-    #transformační matice
-    T01=np.array([[R01[0, 0],R01[0, 1],R01[0, 2],0]
-             ,[R01[1, 0],R01[1, 1],R01[1, 2],0]
-             ,[R01[2, 0],R01[2, 1],R01[2, 2],v1]
-             ,[0,0,0,1]])
-
-    T12=np.array([[R12[0, 0],R12[0, 1],R12[0, 2],v2*math.cos(theta2)]
-                ,[R12[1, 0],R12[1, 1],R12[1, 2],-v2*math.sin(theta2)]
-                ,[R12[2, 0],R12[2, 1],R12[2, 2],v2]
-                ,[0,0,0,1]])
-
-    T23=np.array([[R23[0, 0],R23[0, 1],R23[0, 2],0]
-                ,[R23[1, 0],R23[1, 1],R23[1, 2],0]
-                ,[R23[2, 0],R23[2, 1],R23[2, 2],-v3]
-                ,[0,0,0,1]])
-
-    T34=np.array([[R34[0, 0],R34[0, 1],R34[0, 2],v4*math.cos(theta4)]
-                ,[R34[1, 0],R34[1, 1],R34[1, 2],-v4*math.sin(theta4)]
-                ,[R34[2, 0],R34[2, 1],R34[2, 2],v4]
-                ,[0,0,0,1]])
-
-    T45=np.array([[R45[0, 0],R45[0, 1],R45[0, 2],0]
-                ,[R45[1, 0],R45[1, 1],R45[1, 2],0]
-                ,[R45[2, 0],R45[2, 1],R45[2, 2],v5]
-                ,[0,0,0,1]])
-
-    T56=np.array([[R56[0, 0],R56[0, 1],R56[0, 2],v6*math.cos(theta6)]
-                ,[R56[1, 0],R56[1, 1],R56[1, 2],-v6*math.sin(theta6)]
-                ,[R56[2, 0],R56[2, 1],R56[2, 2],v6]
-                ,[0,0,0,1]])
-    
-    T67=np.array([[R67[0, 0],R67[0, 1],R67[0, 2],0]
-                ,[R67[1, 0],R67[1, 1],R67[1, 2],0]
-                ,[R67[2, 0],R67[2, 1],R67[2, 2],-v7]
-                ,[0,0,0,1]])
-
+    T01=transformation(q[0]+dimensions_delta[4],-np.pi/2,v1)
+    T12=transformation(q[1]+dimensions_delta[5],np.pi/2,0)
+    T23=transformation(q[2]+dimensions_delta[6],np.pi/2,v3)
+    T34=transformation(q[3]+dimensions_delta[7],-np.pi/2,0)
+    T45=transformation(q[4],-np.pi/2,v5)
+    T56=transformation(q[5]+dimensions_delta[8],np.pi/2,0)
+    T67=transformation(q[6],0,v7)
     #print("T01 =\n", T01)
     #print("T12 =\n", T12)
     T02=T01@T12
@@ -443,70 +401,108 @@ def robot_dimensions(q_in,dimensions_delta):
     p_E=T_mat_list[7][:3,3]
     return p_E
 
+
+list_of_points = measurement_points_lists(0, 1800)
+
+robot_points = np.asarray(list_of_points[0])
+leika_points = np.asarray(list_of_points[1])
+
+R, t = least_square_method(robot_points, leika_points)
+
+q_valid = q_wanted[distance > 0]
+
 def objective(x):
-    q=q_wanted
-    valid=distance>0
-
-    list_of_points=measurement_points_lists(0,1800)
-    transformation=least_square_method(list_of_points[0],list_of_points[1])
-
-    dv1,dv3,dv5,dv7,dq1,dq2,dq3,dq4,dq6=x
-
-    delta=np.array([
-        dv1,dv3,dv5,dv7,dq1,dq2,dq3,dq4,dq6
+    predicted = np.array([
+        robot_dimensions(qi, x)
+        for qi in q_valid
     ])
 
-    measured=measurement_points_lists(0,1800)[1]
-    predicted=np.array([
-        robot_dimensions(qi,delta) for qi in q[valid]
-    ])
-    predicted=predicted@ transformation[0].T+transformation[1]
-    return np.sqrt(np.mean(np.sum((predicted-measured)**2,axis=1)))
+    # Transformace robot -> Leica
+    predicted = predicted @ R.T + t
+
+    errors = predicted - leika_points
+
+    return np.sqrt(
+        np.mean(np.sum(errors**2, axis=1))
+    )
+
+
+class TimeEstimate(Callback):
+    def __init__(self, total_generations):
+        super().__init__()
+        self.start = time.perf_counter()
+        self.total_generations = total_generations
+
+    def notify(self, algorithm):
+        if algorithm.n_gen == 10:
+            elapsed = time.perf_counter() - self.start
+            estimated = elapsed / 10 * self.total_generations
+
+            print(f"\nČas prvních 10 generací: {elapsed:.1f} s")
+            print(f"Odhad celkové doby: {estimated / 60:.1f} min")
+            print(f"Odhad zbývající doby: {(estimated - elapsed) / 60:.1f} min\n")
 
 class RobotCalibration(ElementwiseProblem):
     def __init__(self, elementwise=True, **kwargs):
-        super().__init__(n_var=9,n_obj=1, xl=np.array([-5.0,-5.0,-5.0,-5.0,-0.0175,-0.0175,-0.0175,-0.0175,-0.0175]),xu=np.array([5.0,5.0,5.0,5.0,0.0175,0.0175,0.0175,0.0175,0.0175]))
+        super().__init__(
+            n_var=9,
+            n_obj=1, 
+            xl=np.array([-5.0]*4+[-0.0175]*5),
+            xu=np.array([5.0]*4+[0.0175]*5),
+            **kwargs)
+    
     def _evaluate(self, x,out, *args, **kwargs):
         out["F"]=objective(x)
 
     
-problem=RobotCalibration()
+if __name__ == "__main__":
+    x0 = np.zeros(9)
 
-algorithm = DE(
-    pop_size=60,
-    variant="DE/rand/1/bin",
-    CR=0.9,
-    F=0.8
-)
+    predicted = np.array([
+        robot_dimensions(qi, x0)
+        for qi in q_wanted[distance > 0]
+    ])
 
-print("Počáteční RMSE:", objective(np.zeros(9)))
+    # Správná transformace robot -> Leica
+    predicted_leica = predicted @ R.T + t
 
-print("n_var:", problem.n_var)
-print("n_obj:", problem.n_obj)
-print("xl:", problem.xl)
-print("xu:", problem.xu)
+    measured = np.array(list_of_points[1])
 
-print("Test objective:", objective(np.zeros(9)))
+    print("První transformovaný bod:", predicted_leica[0])
+    print("První bod Leicy:", measured[0])
 
-out = {}
-problem._evaluate(np.zeros(9), out)
-print("Test evaluate:", out)
+    print("RMSE kontrola:", np.sqrt(
+        np.mean(np.sum((predicted_leica - measured)**2, axis=1))
+    ))
 
-result=minimize(
-    problem,
-    algorithm,
-    termination=("n_gen",500),
-    seed=1,
-    verboe=True
-)
+    with mp.Pool(processes=10) as pool:
 
-print("\nPůvodní RMSE:", objective(np.zeros(9)), "mm")
-print("Optimalizované RMSE:", float(result.F[0]), "mm")
+        runner = StarmapParallelization(pool.starmap)
 
-names = ["v1", "v3", "v5", "v7", "q1", "q2", "q3", "q4", "q6"]
+        problem = RobotCalibration(
+            elementwise_runner=runner
+        )
 
-for name, correction in zip(names, result.X):
-    if name.startswith("q"):
-        print(f"{name}: {np.degrees(correction):+.6f}°")
-    else:
-        print(f"{name}: {correction:+.6f} mm")
+        algorithm = DE(
+            pop_size=180,
+            variant="DE/rand/1/bin",
+            CR=0.9,
+            F=0.8
+        )
+
+        x0 = np.zeros(9)
+
+        result = minimize(
+            problem,
+            algorithm,
+            termination=("n_gen", 1500),
+            seed=1,
+            verbose=True,
+            callback=TimeEstimate(1500)
+        )
+        print("Počáteční RMSE:", objective(x0))
+        print("RMSE optimalizovaného řešení:", objective(result.X))
+
+        print("Optimalizované RMSE:", result.F)
+        print("Parametry:", result.X)
+
