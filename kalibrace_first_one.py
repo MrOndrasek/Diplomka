@@ -475,7 +475,7 @@ if __name__ == "__main__":
         np.mean(np.sum((predicted_leica - measured)**2, axis=1))
     ))
 
-    with mp.Pool(processes=10) as pool:
+    with mp.Pool(processes=14) as pool:
 
         runner = StarmapParallelization(pool.starmap)
 
