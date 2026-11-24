@@ -57,7 +57,7 @@ def forward_kinematics(q): #q je list o delce 7 s natocenim kloubu ve stupnich, 
     v4=0
     v5=400
     v6=0
-    v7=126
+    v7=126+51
     h1=0
     h2=0
     h3=0
@@ -388,7 +388,7 @@ def fibonacci_sphere(center, radius, number_of_points):
 
     return points
 
-def ball_movements_targeted(number_of_points=9,number_of_support_points=100):
+def ball_movements_targeted(number_of_points,number_of_support_points):
     R_cil = np.array([
             [-1,0,0],
             [0,0,1],
@@ -406,8 +406,8 @@ def ball_movements_targeted(number_of_points=9,number_of_support_points=100):
     p_cil_center=[
                 np.array([500,-550,800]),
                 np.array([350,-550,800]),
-                np.array([200,-550,800]),
                 np.array([500,-550,600]),
+                np.array([200,-550,800]),
                 np.array([350,-550,600]),
                 np.array([200,-550,600]),
                 np.array([500,-550,400]),
@@ -432,6 +432,9 @@ def ball_movements_targeted(number_of_points=9,number_of_support_points=100):
         if result_center is False:
             continue
         else:
+            point_number+=1
+            print(result_center[1])
+        """else:
             q_0_center=result_center[1]
             azimut=0
             polar_angle=0
@@ -481,9 +484,9 @@ def ball_movements_targeted(number_of_points=9,number_of_support_points=100):
                     0,
                     math.degrees(q_0_center[4,0]),
                     math.degrees(q_0_center[5,0])
-                ])
-            point_number+=1
+                ])"""
+        
     
     export_positions_to_csv(list_of_motions)
 
-ball_movements_targeted(9,100)
+ball_movements_targeted(9,1)
