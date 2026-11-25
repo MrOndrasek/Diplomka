@@ -13,7 +13,7 @@ import sys
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QTimer
 import shutil
-from UI.ros_bridge import RosBridge
+from measurement_system.UI.ros_bridge import RosBridge
 from measurement_system.database_export import export_table
 from measurement_system.drivers.db_setup.connection_settings import load_settings, save_settings, connect_with_settings
 from measurement_system.connection_profiles import load_profiles, save_profiles, selected_robot, leica_endpoint
@@ -340,6 +340,13 @@ class MainWindow(QMainWindow):
             pass
         # Default uses PolicyKit authentication in a graphical session. Override
         # with LEICA_LAUNCH_MODE=direct only when pysoem has OS permission already.
+        # Docker režim: Leica EtherCAT publisher běží mimo kontejner.
+        if os.environ.get("LEICA_LAUNCH_MODE", "").lower() == "external":
+            self.module_labels["leica"].setText(
+                "Leica publisher běží mimo Docker – připojuji ZMQ monitor"
+            )
+            self._connect_monitor()
+            return
         mode = os.environ.get("LEICA_LAUNCH_MODE", "pkexec").lower()
         leica_script = Path(__file__).resolve().parent / "drivers" / "leika_driver" / "leica_connect.py"
         # For --symlink-install source / build paths both work. No venv assumed.

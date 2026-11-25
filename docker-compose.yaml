@@ -1,18 +1,20 @@
 services:
   postgres:
     image: postgres:18.2
-    ports:
-      - "127.0.0.1:5432:5432"
+
     environment:
-      - POSTGRES_USER=dohnaon1
-      - POSTGRES_PASSWORD=1234
-      - POSTGRES_DB=laser_tracker_data
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: laser_tracker_data
+
     volumes:
       - postgres_data:/var/lib/postgresql
+
     restart: unless-stopped
+
     networks:
       diplomka-net:
-        ipv4_address:10.10.0.201
+        ipv4_address: 10.10.0.201
   
   pgadmin:
     image: dpage/pgadmin4:9.12
@@ -31,7 +33,7 @@ services:
 volumes:
   postgres_data:
     external: true
-    name: NAZEV_EXISTUJICIHO_VOLUME
+    name: diplomka_ros_postgres_data
 
 networks:
   diplomka-net:

@@ -2,30 +2,48 @@ services:
   measurement_app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
+
     image: klauda/measurement-app:jazzy
-    # Linux host networking: external Leica ZMQ driver can remain on tcp://127.0.0.1:5555
+    container_name: measurement_app
+
     environment:
+      # ROS2
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}
-      LEICA_ZMQ_URL: ${LEICA_ZMQ_URL:-tcp://127.0.0.1:5555}
-      # Set to the real package/launch combination in your ROS2 repository:
-      APP_LAUNCH_PACKAGE: ${APP_LAUNCH_PACKAGE:-}
-      APP_LAUNCH_FILE: ${APP_LAUNCH_FILE:-}
-      # Optional: if not using a launch file, provide an explicit shell command
-      APP_COMMAND: ${APP_COMMAND:-}
+      ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+      LEICA_LAUNCH_MODE: external
+
+      # Leica ZMQ
+      LEICA_ZMQ_URL: tcp://10.10.0.2:5555
+
+      # PostgreSQL
+      PGHOST: ${PGHOST:-10.10.0.201}
+      PGPORT: ${PGPORT:-5432}
+      PGDATABASE: ${PGDATABASE:-laser_tracker_data}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+
+      # Grafické rozhraní
+      DISPLAY: ${DISPLAY}
+      QT_QPA_PLATFORM: xcb
+      XAUTHORITY: /tmp/.docker.xauth
+
     volumes:
+      # Přístup ke grafickému prostředí Linuxu
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ${XAUTHORITY}:/tmp/.docker.xauth:ro
+
+      # Exportovaná data
       - ./data:/app/data
-    restart: unless-stopped
+      - /home/dohnal:/host/home/dohnal:rw
+  
 
     networks:
       diplomka-net:
-        ipv4_address:10.10.0.2
+        ipv4_address: 10.10.0.2
+
+    restart: "no"
 
 networks:
   diplomka-net:
-    driver: bridge
-    internal: false
-    ipam:
-      config:
-        - subnet: 10.10.0.0/24
+    external: true

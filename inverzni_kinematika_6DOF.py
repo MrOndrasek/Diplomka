@@ -489,4 +489,110 @@ def ball_movements_targeted(number_of_points,number_of_support_points):
     
     export_positions_to_csv(list_of_motions)
 
-ball_movements_targeted(9,1)
+
+import numpy as np
+import math
+
+def generate_random_movements(number_of_points=200):
+
+    R_cil = np.array([
+        [-1, 0, 0],
+        [0, 0, 1],
+        [0, 1, 0]
+    ]) @ np.diag([-1, 1, -1])
+
+    R_fix = np.array([
+        [0, -1, 0],
+        [1,  0, 0],
+        [0,  0, 1]
+    ])
+
+    R_cil_model = R_cil @ R_fix.T
+
+    list_of_motions = []
+
+    # Rozsahy pracovního prostoru [mm]
+    x_min, x_max = 250, 600
+    y_min, y_max = -650, -450
+    z_min, z_max = 150, 600
+
+    # Generátor náhodných bodů
+    rng = np.random.default_rng(seed=42)
+
+    # Počáteční konfigurace robota
+    q_0 = np.radians([
+        [5],
+        [90],
+        [5],
+        [5],
+        [5],
+        [5]
+    ])
+
+    point_number = 0
+    attempts = 0
+    max_attempts = 10000
+
+    while point_number < number_of_points and attempts < max_attempts:
+
+        attempts += 1
+
+        # Náhodná cílová poloha
+        p_cil = np.array([
+            rng.uniform(x_min, x_max),
+            rng.uniform(y_min, y_max),
+            rng.uniform(z_min, z_max)
+        ])
+
+        result = joint_calculation(
+            p_cil,
+            R_cil_model,
+            q_0.copy(),
+            6000,
+            0.01
+        )
+
+        # Pokud inverzní kinematika nenajde řešení
+        if result is False:
+            print(f"Neúspěšný bod: {p_cil}")
+            continue
+
+        # Úspěšně vypočítané kloubové souřadnice
+        q = result[1]
+
+        # Výstupní pořadí 7 kloubů robota
+        list_of_motions.append([
+            math.degrees(q[0, 0]),
+            math.degrees(q[1, 0]),
+            math.degrees(q[2, 0]),
+            math.degrees(-q[3, 0]),
+            0,
+            math.degrees(q[4, 0]),
+            math.degrees(q[5, 0])
+        ])
+
+        # Aktualizace počáteční konfigurace
+        # pro následující výpočet IK
+        q_0 = q.copy()
+
+        point_number += 1
+
+        print(
+            f"Bod {point_number}/{number_of_points}: "
+            f"X={p_cil[0]:.2f}, "
+            f"Y={p_cil[1]:.2f}, "
+            f"Z={p_cil[2]:.2f}"
+        )
+
+    if point_number < number_of_points:
+        print(
+            f"Nepodařilo se vytvořit všech {number_of_points} bodů. "
+            f"Vytvořeno: {point_number}"
+        )
+
+    export_positions_to_csv(list_of_motions)
+
+    return list_of_motions
+
+
+generate_random_movements(200)
